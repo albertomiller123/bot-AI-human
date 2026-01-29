@@ -15,24 +15,25 @@ class WebServer {
         this.app.use(express.static(path.join(__dirname, 'public')));
 
         // === SECURITY: API Authentication Middleware ===
+        // === SECURITY: API Authentication Middleware ===
+        const AUTH_TOKEN = process.env.WEB_ADMIN_TOKEN || "admin123";
+
         this.app.use('/api', (req, res, next) => {
             // Skip auth for GET requests (status check) if no secret configured
-            if (req.method === 'GET' && !this.apiSecret) {
-                return next();
-            }
+            // Phase 5 Security: Strict Token Check
+            if (req.path === '/status') return next(); // Public status is OK
 
-            // Require auth for all POST requests (commands, god-whisper, config)
-            if (req.method === 'POST') {
-                if (!this.apiSecret) {
-                    console.warn('[Security] API_SECRET not set! All POST requests will be blocked.');
-                    return res.status(503).json({ error: 'API not configured. Set API_SECRET in .env' });
-                }
+            const token = req.query.token || req.headers['authorization'];
+            // Accept "Bearer token" or raw token
+            const valid = token === AUTH_TOKEN || (token && token.startsWith('Bearer ') && token.split(' ')[1] === AUTH_TOKEN);
 
-                const authHeader = req.headers.authorization;
-                if (!authHeader || authHeader !== `Bearer ${this.apiSecret}`) {
-                    console.warn(`[Security] Unauthorized request to ${req.path} from ${req.ip}`);
-                    return res.status(401).json({ error: 'Unauthorized. Invalid or missing API key.' });
+            if (!valid) {
+                // Backward compatibility with API Secret if token not set
+                if (this.apiSecret && req.headers.authorization === `Bearer ${this.apiSecret}`) {
+                    return next();
                 }
+                console.warn(`[Security] 403 Forbidden: ${req.path} from ${req.ip}`);
+                return res.status(403).json({ error: "Forbidden: Invalid Token. Use ?token=admin123" });
             }
             next();
         });

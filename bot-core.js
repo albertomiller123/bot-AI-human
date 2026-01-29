@@ -186,6 +186,35 @@ class BotCore {
             }
             console.log('--- KICKED DEBUG END ---');
         });
+
+        // Phase 5 Stability: Death Handler
+        this.bot.on('death', () => {
+            console.log("[BotCore] ☠️ Bot died! Resetting mental state...");
+
+            // 1. Reset Task Manager
+            if (this.taskManager) {
+                this.taskManager.queue = [];
+                this.taskManager.activeTask = null;
+                this.taskManager.isBusy = false;
+            }
+
+            // 2. Clear Survival Stack
+            if (this.survivalSystem && this.survivalSystem.stateStack) {
+                this.survivalSystem.stateStack.clear();
+            }
+
+            // 3. Stop Pathfinder
+            if (this.bot.pathfinder) {
+                this.bot.pathfinder.setGoal(null);
+            }
+
+            // 4. Reset ActionLock
+            if (this.actionLock) {
+                this.actionLock.releaseAll(); // Safety release
+            }
+
+            this.say("Ouch! Chet roi. Resetting brain...");
+        });
     }
 
     /**
@@ -298,6 +327,18 @@ class BotCore {
         } catch (e) {
             console.error('[Guardian] Failed to fully activate:', e.message);
         }
+    }
+
+    /**
+     * Deactivate Guardian Mode manually
+     */
+    deactivateGuardianMode() {
+        this.stopFidgetLoop();
+        if (this.bot) {
+            this.bot.deactivateItem(); // Lower shield
+        }
+        console.log('[Guardian] ✅ Manual override. Resuming operations.');
+        this.say("Guardian Mode deactivated. Back to work.");
     }
 
     /**

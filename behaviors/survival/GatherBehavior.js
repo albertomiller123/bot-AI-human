@@ -95,11 +95,23 @@ class GatherBehavior {
             });
         }
 
-        return this.bot.findBlocks({
-            matching: blockId,
-            maxDistance: this.maxSearchDistance,
-            count: count
-        });
+        // Phase 5 Optimization: Spiral Search Strategy
+        const ranges = [32, 64, 128, this.maxSearchDistance];
+        const uniqueRanges = [...new Set(ranges)].sort((a, b) => a - b);
+
+        for (const r of uniqueRanges) {
+            if (r > this.maxSearchDistance) break;
+
+            const found = this.bot.findBlocks({
+                matching: blockId,
+                maxDistance: r,
+                count: count
+            });
+
+            if (found.length > 0) return found;
+        }
+
+        return [];
     }
 }
 

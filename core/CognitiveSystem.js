@@ -54,8 +54,13 @@ TASK:
 
     _appendToLTM(summary) {
         let ltm = [];
-        if (fs.existsSync(this.longTermPath)) {
-            ltm = JSON.parse(fs.readFileSync(this.longTermPath));
+        try {
+            if (fs.existsSync(this.longTermPath)) {
+                ltm = JSON.parse(fs.readFileSync(this.longTermPath));
+            }
+        } catch (readErr) {
+            console.error("[Cognitive] Error reading LTM:", readErr);
+            ltm = [];
         }
 
         ltm.push({ date: new Date().toISOString(), summary });
@@ -63,7 +68,14 @@ TASK:
         // Pruning (Keep last 50 summaries)
         if (ltm.length > 50) ltm.shift();
 
-        fs.writeFileSync(this.longTermPath, JSON.stringify(ltm, null, 2));
+        // Phase 5 Data Integrity: Atomic Write
+        const tempPath = this.longTermPath + '.tmp';
+        try {
+            fs.writeFileSync(tempPath, JSON.stringify(ltm, null, 2));
+            fs.renameSync(tempPath, this.longTermPath);
+        } catch (writeErr) {
+            console.error("[Cognitive] Atomic save failed:", writeErr);
+        }
     }
 }
 

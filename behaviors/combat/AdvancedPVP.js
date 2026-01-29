@@ -76,6 +76,14 @@ class AdvancedPVP {
 
         const dist = this.bot.entity.position.distanceTo(target.position);
 
+        const isSprinting = this.bot.entity.controlState['sprint'];
+
+        // FIX: If sprinting (chasing) and health is decent, DO NOT shield (it slows you down)
+        if (isSprinting && this.bot.health > 10) {
+            this.bot.deactivateItem();
+            return;
+        }
+
         // Only shield when enemy is close and we're not in attack cooldown
         if (dist < 4 && Date.now() - this.lastAttackTime > 300) {
             this.bot.activateItem(true); // Right click offhand (shield)
