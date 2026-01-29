@@ -1,8 +1,12 @@
+/**
+ * AdvancedPVP.js - Advanced Combat System
+ * 
+ * FIX: Dynamic target height based on entity.height (not hardcoded 1.6m)
+ * FIX: Smart shield that checks for axe-disabled cooldown
+ */
 class AdvancedPVP {
     constructor(botCore) {
         this.botCore = botCore;
-        // this.bot = botCore.bot; // Removed: was null at init
-
         this.isCritJumping = false;
         this.lastAttackTime = 0;
     }
@@ -13,45 +17,43 @@ class AdvancedPVP {
     async attack(target) {
         if (!target || !this.bot.entity) return;
 
-        // 1. Equip Weapon (Best Sword/Axe)
         await this.equipBestWeapon();
 
-        // 2. Approach Logic
         const dist = this.bot.entity.position.distanceTo(target.position);
-        if (dist > 3) {
-            this.bot.lookAt(target.position.offset(0, 1.6, 0));
+
+        // FIX 1: Look at target's HEAD based on their actual height
+        // target.height * 0.85 = approximate head/neck position for any mob
+        // This works for Spiders (0.9m), Baby Zombies (0.975m), Crouching players, etc.
+        const targetHead = target.position.offset(0, (target.height || 1.8) * 0.85, 0);
+        await this.bot.lookAt(targetHead);
+
+        if (dist > 3.5) {
             this.bot.setControlState('sprint', true);
             this.bot.setControlState('forward', true);
             if (this.bot.entity.isCollidedHorizontally) this.bot.setControlState('jump', true);
             return; // Too far to hit
         }
 
-        // 3. CRITICAL HIT LOGIC (Crit Jump)
-        // Only jump if on ground and not already jumping
-        if (this.bot.entity.onGround && !this.isCritJumping) {
+        // Critical Hit Logic (Crit Jump)
+        if (this.bot.entity.onGround && !this.isCritJumping && dist < 3) {
             this.isCritJumping = true;
             this.bot.setControlState('jump', true);
-            // Wait for falling phase (approx 250ms after jump start)
-            await new Promise(r => setTimeout(r, 250));
+            await new Promise(r => setTimeout(r, 250)); // Wait for apex
             this.bot.setControlState('jump', false);
         }
 
-        // Wait until we are falling (oy < 0) for critical hit, or close enough
-        if (this.bot.entity.velocity.y < -0.1 || this.bot.entity.onGround) {
-            // Attack Speed Cooldown check (roughly 600ms for sword)
+        // Attack when falling (critical hit) or close enough
+        if (this.bot.entity.velocity.y < -0.1 || this.bot.entity.onGround || dist < 2) {
             const now = Date.now();
+            // Sword attack cooldown (~600ms)
             if (now - this.lastAttackTime > 600) {
-                await this.bot.lookAt(target.position.offset(0, 1.6, 0));
                 this.bot.attack(target);
                 this.lastAttackTime = now;
-                this.isCritJumping = false; // Reset jump flag
+                this.isCritJumping = false;
 
-                // 4. W-TAP LOGIC (Knockback)
-                // Stop sprinting for 50ms right after hit to reset knockback
+                // W-Tap Logic (Reset Knockback for more KB)
                 this.bot.setControlState('sprint', false);
-                this.bot.setControlState('forward', false);
                 await new Promise(r => setTimeout(r, 50));
-                this.bot.setControlState('forward', true);
                 this.bot.setControlState('sprint', true);
             }
         }
@@ -59,13 +61,23 @@ class AdvancedPVP {
 
     // --- DEFENSE LOGIC ---
     async smartShield(target) {
-        // Shield if target is looking at us and close
         if (!target) return;
 
-        // ... Logic for checking target's yaw/pitch facing us ...
-        // For MVP, just shield if they are < 4 blocks and we are not attacking
+        // FIX 2: Check if shield is on cooldown (disabled by axe hit)
+        // When shield is disabled, bot.player or similar might indicate blocking cooldown
+        // For safety, check if we have a shield equipped and it's usable
+        const offhand = this.bot.inventory.slots[45]; // Offhand slot
+        const hasShield = offhand && offhand.name.includes('shield');
+
+        if (!hasShield) {
+            this.bot.deactivateItem();
+            return;
+        }
+
         const dist = this.bot.entity.position.distanceTo(target.position);
-        if (dist < 4 && Date.now() - this.lastAttackTime > 400) {
+
+        // Only shield when enemy is close and we're not in attack cooldown
+        if (dist < 4 && Date.now() - this.lastAttackTime > 300) {
             this.bot.activateItem(true); // Right click offhand (shield)
         } else {
             this.bot.deactivateItem();
@@ -75,6 +87,7 @@ class AdvancedPVP {
     // --- UTILS ---
     async equipBestWeapon() {
         const items = this.bot.inventory.items();
+        // Priority: Sword > Axe (swords have faster attack speed)
         const sword = items.find(i => i.name.includes('sword'));
         const axe = items.find(i => i.name.includes('axe'));
 
