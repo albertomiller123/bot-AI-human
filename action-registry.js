@@ -246,6 +246,20 @@ const ACTION_SCHEMAS = {
                 radius: { type: "integer", description: "Patrol radius", default: 20 }
             }
         }
+    },
+
+    // === PROTOCOLS ===
+    guardian_mode: {
+        name: "guardian_mode",
+        description: "Activate Silent Guardian Protocol (Defense Mode + Report)",
+        parameters: {
+            type: "object",
+            properties: {
+                error: { type: "string", description: "Error message/reason" },
+                whisper_to: { type: "string", description: "Owner username to report to" }
+            },
+            required: ["error"]
+        }
     }
 };
 

@@ -1,11 +1,15 @@
-const OpenAI = require('openai');
+const { Worker } = require('worker_threads');
+const path = require('path');
+const EventEmitter = require('events');
 
-class AIManager {
+class AIManager extends EventEmitter {
     constructor(botCore) {
+        super();
         this.botCore = botCore;
+        this.worker = null;
         this.config = null;
-        this.client = null;
-        this.fallbackClient = null;
+        this.pendingRequests = new Map();
+        this.requestIdCounter = 0;
 
         this._init();
     }
@@ -14,137 +18,114 @@ class AIManager {
         try {
             // Priority: ENV > config file
             const envBaseURL = process.env.AI_BASE_URL;
-            const envModelFast = process.env.AI_MODEL_FAST;
-            const envModelSlow = process.env.AI_MODEL_SLOW;
-
-            // Load from config file as fallback
             const settings = require('../config/settings.json');
             const fileConfig = settings.ai || {};
 
-            // Merge config: ENV takes priority
             this.config = {
                 baseURL: envBaseURL || fileConfig.baseURL || "https://ai.megallm.io/v1",
                 fast: {
-                    model: envModelFast || fileConfig.fast?.model || "mistralai/mistral-nemotron",
+                    model: process.env.AI_MODEL_FAST || fileConfig.fast?.model || "mistralai/mistral-nemotron",
                     max_tokens: fileConfig.fast?.max_tokens || 200,
                     temperature: fileConfig.fast?.temperature || 0.6
                 },
                 slow: {
-                    model: envModelSlow || fileConfig.slow?.model || "openai-gpt-oss-20b",
+                    model: process.env.AI_MODEL_SLOW || fileConfig.slow?.model || "openai-gpt-oss-20b",
                     max_tokens: fileConfig.slow?.max_tokens || 1000,
                     temperature: fileConfig.slow?.temperature || 0.2
-                }
+                },
+                apiKey: process.env.MEGALLM_API_KEY,
+                fallbackURL: process.env.AI_FALLBACK_URL,
+                fallbackKey: process.env.AI_FALLBACK_KEY
             };
 
-            // API Key availability check
-            const apiKey = process.env.MEGALLM_API_KEY;
-            if (!apiKey) {
+            if (!this.config.apiKey) {
                 console.warn("[AIManager] ⚠️ MEGALLM_API_KEY missing! AI features DISABLED.");
-                this.config = null;
                 return;
             }
 
-            this.client = new OpenAI({
-                apiKey: apiKey,
-                baseURL: this.config.baseURL
+            // Spawn Worker
+            const workerPath = path.join(__dirname, 'AIWorker.js');
+            this.worker = new Worker(workerPath);
+
+            // Message Handler
+            this.worker.on('message', (msg) => {
+                if (msg.type === 'init_done') {
+                    console.log("[AIManager] ✅ AI Worker Initialized.");
+                } else if (msg.type === 'result') {
+                    this._handleResult(msg.result);
+                }
             });
 
-            // Setup fallback client if configured
-            const fallbackURL = process.env.AI_FALLBACK_URL;
-            const fallbackKey = process.env.AI_FALLBACK_KEY;
-            if (fallbackURL && fallbackKey) {
-                this.fallbackClient = new OpenAI({
-                    apiKey: fallbackKey,
-                    baseURL: fallbackURL
-                });
-                console.log(`[AIManager] 🔄 Fallback API configured: ${fallbackURL.substring(0, 30)}...`);
-            }
+            this.worker.on('error', (err) => {
+                console.error("[AIManager] ❌ Worker Error:", err);
+            });
 
-            console.log(`[AIManager] ✅ Dual-Brain initialized.`);
-            console.log(`[AIManager]    Base URL: ${this.config.baseURL}`);
-            console.log(`[AIManager]    Fast: ${this.config.fast.model}, Slow: ${this.config.slow.model}`);
+            this.worker.on('exit', (code) => {
+                if (code !== 0) console.error(`[AIManager] Worker stopped with exit code ${code}`);
+            });
+
+            // Init Worker Config
+            this.worker.postMessage({ type: 'init', config: this.config });
+
         } catch (e) {
-            console.error("[AIManager] ❌ CRITICAL: Failed to init AI:", e.message);
-            console.error("[AIManager] AI features will be DISABLED!");
-            this.config = null;
+            console.error("[AIManager] ❌ Failed to init:", e);
         }
     }
 
-    /**
-     * System 1: Fast, Reflexive, Combat, Chat Banter
-     * Model: mistralai/mistral-nemotron
-     */
+    _handleResult(result) {
+        const { id, success, content, error } = result;
+        const request = this.pendingRequests.get(id);
+
+        if (request) {
+            if (success) {
+                request.resolve(content);
+            } else {
+                request.reject(new Error(error));
+            }
+            this.pendingRequests.delete(id);
+        }
+    }
+
+    async _sendRequest(type, prompt, jsonMode) {
+        if (!this.worker) return null;
+
+        const id = ++this.requestIdCounter;
+
+        return new Promise((resolve, reject) => {
+            // Timeout handler
+            const timeout = setTimeout(() => {
+                if (this.pendingRequests.has(id)) {
+                    this.pendingRequests.delete(id);
+                    reject(new Error("AI Worker Timeout"));
+                }
+            }, 60000);
+
+            this.pendingRequests.set(id, { resolve, reject, timeout });
+
+            this.worker.postMessage({
+                type: 'call',
+                data: { id, type, prompt, jsonMode }
+            });
+        });
+    }
+
     async fast(prompt, jsonMode = false) {
-        if (!this.client && !this.fallbackClient) return null;
-
-        const tryClient = async (client, type) => {
-            try {
-                const response = await client.chat.completions.create({
-                    model: type === 'main' ? this.config.fast.model : "mistralai/mistral-nemotron", // Fallback usually same or similar
-                    messages: [{ role: 'user', content: prompt }],
-                    max_tokens: this.config.fast.max_tokens,
-                    temperature: this.config.fast.temperature,
-                    response_format: jsonMode ? { type: "json_object" } : undefined
-                });
-                return response.choices[0].message.content;
-            } catch (error) {
-                console.error(`[AIManager/Fast] ${type} Error: ${error.message}`);
-                return null;
-            }
-        };
-
-        // Try Main Client
-        if (this.client) {
-            const result = await tryClient(this.client, 'main');
-            if (result) return result;
+        try {
+            return await this._sendRequest('fast', prompt, jsonMode);
+        } catch (e) {
+            console.error(`[AIManager/Fast] Error: ${e.message}`);
+            return null;
         }
-
-        // Try Fallback Client
-        if (this.fallbackClient) {
-            console.warn("[AIManager] ⚠️ Primary Fast AI failed. Switching to Fallback...");
-            return await tryClient(this.fallbackClient, 'fallback');
-        }
-
-        return null;
     }
 
-    /**
-     * System 2: Slow, Strategic, Planning, Analysis
-     * Model: openai-gpt-oss-20b
-     */
     async slow(prompt, jsonMode = false) {
-        if (!this.client && !this.fallbackClient) return null;
-
-        const tryClient = async (client, type) => {
-            try {
-                if (type === 'main') console.log("[AIManager] System 2 Thinking...");
-                const response = await client.chat.completions.create({
-                    model: type === 'main' ? this.config.slow.model : "openai-gpt-oss-20b",
-                    messages: [{ role: 'user', content: prompt }],
-                    max_tokens: this.config.slow.max_tokens,
-                    temperature: this.config.slow.temperature,
-                    response_format: jsonMode ? { type: "json_object" } : undefined
-                });
-                return response.choices[0].message.content;
-            } catch (error) {
-                console.error(`[AIManager/Slow] ${type} Error: ${error.message}`);
-                return null;
-            }
-        };
-
-        // Try Main Client
-        if (this.client) {
-            const result = await tryClient(this.client, 'main');
-            if (result) return result;
+        try {
+            if (jsonMode) console.log("[AIManager] System 2 Thinking (Worker)...");
+            return await this._sendRequest('slow', prompt, jsonMode);
+        } catch (e) {
+            console.error(`[AIManager/Slow] Error: ${e.message}`);
+            return null;
         }
-
-        // Try Fallback Client
-        if (this.fallbackClient) {
-            console.warn("[AIManager] ⚠️ Primary Slow AI failed. Switching to Fallback...");
-            return await tryClient(this.fallbackClient, 'fallback');
-        }
-
-        return null;
     }
 }
 

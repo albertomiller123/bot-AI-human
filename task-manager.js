@@ -19,15 +19,32 @@ class TaskManager {
 
     get isBusy() { return this.state !== 'idle'; }
 
-    addTask(plan, username) {
-        this.taskQueue.push({ plan, username });
-        this._processQueue();
+    addTask(plan, username, isUrgent = false) {
+        if (isUrgent) {
+            console.log(`[TaskManager] ⚡ Urgent/Reflex task received! Clearing queue...`);
+            this.taskQueue = []; // Clear pending strategies
+            this.shouldStop = true; // Stop current strategy
+
+            // Insert at front
+            this.taskQueue.push({ plan, username });
+
+            // If idle or effectively stopped, process immediately
+            if (!this.isBusy || this.shouldStop) {
+                // slight delay to allow active loop to break
+                setTimeout(() => this._processQueue(), 100);
+            }
+        } else {
+            this.taskQueue.push({ plan, username });
+            this._processQueue();
+        }
     }
 
     async _processQueue() {
-        if (this.isBusy || this.taskQueue.length === 0) return;
+        if (this.isBusy && !this.shouldStop) return; // Busy and not stopping
+        if (this.taskQueue.length === 0) return;
 
-        const { plan, username } = this.taskQueue.shift();
+        const taskItem = this.taskQueue.shift();
+        const { plan, username } = taskItem;
         this.activeTask = { ...plan, username };
         this.currentStepIndex = 0;
         this.shouldStop = false;
@@ -261,10 +278,19 @@ class TaskManager {
             clearInterval(this.persistentTaskInterval);
             this.persistentTaskInterval = null;
         }
+
+        // Release locks
+        if (this.activeTask) {
+            const lockSource = this.activeTask.type || 'strategy';
+            this.botCore.actionLock?.release(lockSource);
+        }
+
         this.activeTask = null;
         this.state = 'idle';
         // FIX: Reset global fail counter for next task
         this.globalFailCount = 0;
+
+        if (!this.shouldStop && this.taskQueue.length > 0) this._processQueue();
     }
 
     stopCurrentTask() {

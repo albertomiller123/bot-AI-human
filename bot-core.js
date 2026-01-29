@@ -58,6 +58,10 @@ class BotCore {
         // Vision System
         this.visualCortex = new VisualCortex(this);
 
+        // Concurrency Control
+        const ActionLock = require('./core/ActionLock');
+        this.actionLock = new ActionLock();
+
         this.mcData = null;
         this.locationsCache = {}; // Cache for locations
     }
@@ -207,15 +211,20 @@ class BotCore {
      * Async chat processing (called from onChat)
      */
     async _processChat(username, message) {
+        // Stop fidget loop when receiving new command from owner
+        this.stopFidgetLoop();
+
         try {
             const plan = await this.aiLayer.processMessage(username, message);
 
             if (plan && plan.steps) {
-                this.taskManager.addTask(plan, username);
+                const isUrgent = plan.type === 'reflex';
+                this.taskManager.addTask(plan, username, isUrgent);
             }
         } catch (e) {
             console.error("[BotCore] AI error:", e);
-            this.say("lag vcl dmm");
+            // FIX: Activate Silent Guardian Protocol instead of public "lag vcl"
+            await this.activateGuardianMode(e.message || 'Unknown error');
         }
     }
 
@@ -227,6 +236,103 @@ class BotCore {
 
     say(message) {
         if (this.bot) this.bot.chat(message);
+    }
+
+    /**
+     * Send private whisper to a player (Silent Guardian Protocol)
+     */
+    whisper(username, message) {
+        if (this.bot) this.bot.chat(`/tell ${username} ${message}`);
+    }
+
+    /**
+     * Silent Guardian Protocol - Activate when AI fails
+     * Step 1: Cancel actions, equip weapon/shield
+     * Step 2: Eat if low health
+     * Step 3: Whisper alert to owner
+     * Step 4: Start fidget loop
+     * Step 5: Wait for manual override
+     */
+    async activateGuardianMode(error) {
+        console.log('[Guardian] ⚔️ Activating Silent Guardian Protocol...');
+
+        try {
+            // Step 1: Cancel current pathfinding and clear control states
+            if (this.bot.pathfinder) {
+                this.bot.pathfinder.setGoal(null);
+            }
+            this.bot.clearControlStates();
+
+            // Step 1b: Equip shield or sword
+            const items = this.bot.inventory.items();
+            const shield = items.find(i => i.name.includes('shield'));
+            const sword = items.find(i => i.name.includes('sword'));
+            if (shield) {
+                await this.bot.equip(shield, 'off-hand').catch(() => { });
+            }
+            if (sword) {
+                await this.bot.equip(sword, 'hand').catch(() => { });
+            }
+
+            // Step 2: Eat if low health
+            if (this.bot.health < 10 && this.bot.food < 18) {
+                const food = items.find(i =>
+                    i.name.includes('cooked') || i.name.includes('bread') ||
+                    i.name.includes('apple') || i.name.includes('golden')
+                );
+                if (food) {
+                    await this.bot.equip(food, 'hand').catch(() => { });
+                    await this.bot.consume().catch(() => { });
+                }
+            }
+
+            // Step 3: Whisper alert to owner
+            const owner = this.config.owner?.name || process.env.BOT_OWNER || 'Steve';
+            const shortError = String(error).substring(0, 50);
+            this.whisper(owner, `[ALERT] AI failure: ${shortError}. Holding position.`);
+
+            // Step 4: Start fidget loop to prevent AFK kick
+            this.startFidgetLoop();
+
+            console.log('[Guardian] ✅ Guardian mode active. Waiting for orders.');
+        } catch (e) {
+            console.error('[Guardian] Failed to fully activate:', e.message);
+        }
+    }
+
+    /**
+     * Fidget loop - look around and jump occasionally to avoid AFK kick
+     */
+    startFidgetLoop() {
+        if (this.fidgetInterval) return; // Already running
+
+        this.fidgetInterval = setInterval(() => {
+            if (!this.bot || !this.bot.entity) return;
+
+            // Random look direction
+            const yaw = (Math.random() - 0.5) * Math.PI;
+            const pitch = (Math.random() - 0.5) * 0.5;
+            this.bot.look(this.bot.entity.yaw + yaw, pitch, false);
+
+            // Occasionally jump
+            if (Math.random() < 0.2 && this.bot.entity.onGround) {
+                this.bot.setControlState('jump', true);
+                setTimeout(() => this.bot?.setControlState('jump', false), 100);
+            }
+        }, 5000); // Every 5 seconds
+
+        console.log('[Guardian] Fidget loop started');
+    }
+
+    /**
+     * Stop fidget loop when resuming normal operations
+     */
+    stopFidgetLoop() {
+        if (this.fidgetInterval) {
+            clearInterval(this.fidgetInterval);
+            this.fidgetInterval = null;
+            console.log('[Guardian] Fidget loop stopped');
+        }
     }
 
     /**

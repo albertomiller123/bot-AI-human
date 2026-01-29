@@ -6,10 +6,28 @@ const GuardBehavior = require('./behaviors/GuardBehavior');
 class Behaviors {
     constructor(botCore) {
         this.botCore = botCore;
+        this.bot = botCore.bot;
+
         // Access Layer 1
-        this.primitives = botCore.primitives;
+        // this.primitives = botCore.primitives;
         // Register Guard Behavior
-        this.guard = new GuardBehavior(botCore);
+        // this.guard = new GuardBehavior(botCore);
+
+        // Load sub-behaviors
+        // this.mining = new MiningBehavior(botCore);
+    }
+
+    /**
+     * Silent Guardian Protocol wrapper
+     */
+    async guardian_mode(error, whisper_to) {
+        console.log(`[Behaviors] Triggering Guardian Mode: ${error}`);
+        if (whisper_to && this.botCore.config.owner) {
+            // Ensure owner config is set properly if passed
+            // Actually botCore.activateGuardianMode looks at config.owner or env
+        }
+        await this.botCore.activateGuardianMode(error);
+        return { success: true, message: "Guardian Protocol Activated" };
     }
 
     get bot() { return this.botCore.bot; }

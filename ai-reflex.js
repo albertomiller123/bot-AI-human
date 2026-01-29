@@ -98,7 +98,8 @@ Rules:
 - If "stop" -> action: "stop_actions"
 - If invalid/unknown -> return null
 
-Return JSON: {"action": "name", "params": {}}`;
+Output ONLY valid JSON.
+Example: {"action": "name", "params": {}}`;
 
         try {
             const response = await this.client.chat.completions.create({
@@ -108,8 +109,7 @@ Return JSON: {"action": "name", "params": {}}`;
             });
 
             const content = response.choices[0].message.content;
-            let jsonString = content.match(/```json\s*([\s\S]*?)\s*```/)?.[1] || content;
-            return JSON.parse(jsonString.trim());
+            return JSON.parse(content);
         } catch (error) {
             return null;
         }

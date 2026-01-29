@@ -85,6 +85,11 @@ class AILayer {
      * Handle quick reflex actions (Trooper model)
      */
     async _handleReflex(contextLite, message, username) {
+        // Reflex Priority: 2
+        if (!this.botCore.actionLock.tryAcquire('reflex', 2, 5000)) {
+            return null; // Busy with higher priority task
+        }
+
         // Pass username so bot knows who to follow
         const quickAction = await this.reflex.handleQuickCommand(contextLite, message, username);
         if (quickAction) {
@@ -92,8 +97,14 @@ class AILayer {
             if (!quickAction.params) quickAction.params = {};
             if (!quickAction.params.name && username) quickAction.params.name = username;
 
-            return { complex_task: message, steps: [quickAction] };
+            return {
+                type: 'reflex',
+                complex_task: message,
+                steps: [quickAction]
+            };
         }
+
+        this.botCore.actionLock.release('reflex'); // Release if no action
         return null;
     }
 
@@ -101,7 +112,16 @@ class AILayer {
      * Handle complex strategy with Vision (Commander model)
      */
     async _handleStrategy(username, message) {
+        // Strategy Priority: 1
+        // Cannot interrupt Reflex or Guardian
+        if (!this.botCore.actionLock.tryAcquire('strategy', 1, 60000)) {
+            this.botCore.say("Dang ban viec gap, doi ti.");
+            return null;
+        }
+
         console.log('[AI Layer] VisualPlanner activated');
+
+        // ... rest of logic ...
 
         // Get full context + visual
         const contextFull = await this.contextManager.getFullContext(username);
@@ -125,6 +145,7 @@ class AILayer {
         }
 
         return {
+            type: 'strategy',
             complex_task: message,
             steps: actionSteps
         };
@@ -147,13 +168,10 @@ CURRENT SITUATION:
 USER GOAL: "${goal}"
 
 Break this down into 3-7 concrete sub-steps. Each step should be a simple action.
-Output ONLY a JSON array of strings, no explanation.
+Output ONLY a JSON array of strings: ["step 1", "step 2"].`;
 
-Example output:
-["Go to the forest", "Mine 10 oak logs", "Craft planks", "Build a small shelter"]`;
-
-        // PHASE 12: Use System 2 (Slow Brain)
-        const content = await this.brain.slow(prompt, false);
+        // PHASE 12: Use System 2 (Slow Brain) with JSON Mode
+        const content = await this.brain.slow(prompt, true);
         return this._parseJSONArray(content || "");
     }
 
@@ -198,14 +216,27 @@ Examples:
                     console.log(`[FastExecutor] Validation failed, retry ${attempt + 1}: ${validation.error}`);
                     continue;
                 } else {
-                    // After all retries, fallback to say_message
-                    console.log(`[FastExecutor] All retries failed, falling back to say_message`);
-                    return { action: "say_message", params: { message: "Xin loi, toi khong the lam viec nay." } };
+                    // After all retries, fallback to guardian mode (Silent Guardian Protocol)
+                    console.log(`[FastExecutor] All retries failed, activating guardian mode`);
+                    return {
+                        action: "guardian_mode",
+                        params: {
+                            error: validation.error,
+                            original_step: step
+                        }
+                    };
                 }
             }
         }
 
-        return { action: "say_message", params: { message: "Khong hieu yeu cau cua ban." } };
+        // Cannot parse AI response at all
+        return {
+            action: "guardian_mode",
+            params: {
+                error: "Cannot understand AI response",
+                original_step: step
+            }
+        };
     }
 
     /**
@@ -226,9 +257,8 @@ Suggest 1-3 alternative steps to fix or work around this issue.
 Output ONLY a JSON array: ["step1", "step2"]`;
 
         try {
-            // PHASE 12 FIX: Use System 2 (Slow Brain) instead of direct client access
-            // this.brain.slow returns the content string directly
-            const content = await this.brain.slow(prompt, false);
+            // PHASE 12 FIX: Use System 2 (Slow Brain) with JSON Mode
+            const content = await this.brain.slow(prompt, true);
             const steps = this._parseJSONArray(content || "");
 
             if (!steps || steps.length === 0) return null;
@@ -241,7 +271,7 @@ Output ONLY a JSON array: ["step1", "step2"]`;
             }
 
             return {
-                complex_task: `Fix: ${errorMessage}`,
+                complex_task: `Correction for: ${errorMessage}`,
                 steps: actionSteps
             };
         } catch (error) {
