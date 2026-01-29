@@ -184,25 +184,37 @@ class BotCore {
         });
     }
 
-    async onChat(username, message) {
+    /**
+     * Non-blocking chat handler - allows parallel conversation during tasks
+     */
+    onChat(username, message) {
         if (username === this.bot.username) return;
 
-        // Log to SQLite
-        await this.memory.logChat(username, message);
+        // Log to SQLite (non-blocking)
+        this.memory.logChat(username, message).catch(() => { });
 
         if (this.config.owner && this.config.owner.name !== username) return;
 
         console.log(`[CHAT] ${username}: ${message}`);
 
+        // Fire-and-forget AI processing - non-blocking
+        this._processChat(username, message).catch(e => {
+            console.error("[BotCore] AI processing failed:", e.message);
+        });
+    }
+
+    /**
+     * Async chat processing (called from onChat)
+     */
+    async _processChat(username, message) {
         try {
-            // Use the refactored Dual-Brain AI Layer
             const plan = await this.aiLayer.processMessage(username, message);
 
             if (plan && plan.steps) {
                 this.taskManager.addTask(plan, username);
             }
         } catch (e) {
-            console.error("[BotCore] AI processing failed:", e);
+            console.error("[BotCore] AI error:", e);
             this.say("lag vcl dmm");
         }
     }

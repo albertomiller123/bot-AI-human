@@ -95,12 +95,22 @@ class SurvivalSystem {
         this.watchdog = new Watchdog(botCore, this);
         this.reflex = new ReflexManager(botCore);
 
+        // Phase 17: Autonomous Systems
+        const HealthMonitor = require('./core/HealthMonitor');
+        const StuckDetector = require('./core/StuckDetector');
 
+        this.healthMonitor = new HealthMonitor(botCore);
+        this.stuckDetector = new StuckDetector(botCore);
     }
 
     start() {
         this.bot = this.botCore.bot; // Init here
         this.watchdog.start();
+
+        // Start autonomous systems
+        this.healthMonitor.start();
+        this.stuckDetector.start();
+        console.log("[SurvivalSystem] Autonomous systems started (HealthMonitor, StuckDetector)");
 
         // Hook up Chat Engine
         this.bot.on('chat', (username, message) => {
