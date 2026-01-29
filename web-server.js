@@ -8,10 +8,34 @@ class WebServer {
         this.botCore = botCore;
         this.port = port;
         this.app = express();
+        this.apiSecret = process.env.API_SECRET; // Load from .env
 
         this.app.use(cors());
         this.app.use(bodyParser.json());
         this.app.use(express.static(path.join(__dirname, 'public')));
+
+        // === SECURITY: API Authentication Middleware ===
+        this.app.use('/api', (req, res, next) => {
+            // Skip auth for GET requests (status check) if no secret configured
+            if (req.method === 'GET' && !this.apiSecret) {
+                return next();
+            }
+
+            // Require auth for all POST requests (commands, god-whisper, config)
+            if (req.method === 'POST') {
+                if (!this.apiSecret) {
+                    console.warn('[Security] API_SECRET not set! All POST requests will be blocked.');
+                    return res.status(503).json({ error: 'API not configured. Set API_SECRET in .env' });
+                }
+
+                const authHeader = req.headers.authorization;
+                if (!authHeader || authHeader !== `Bearer ${this.apiSecret}`) {
+                    console.warn(`[Security] Unauthorized request to ${req.path} from ${req.ip}`);
+                    return res.status(401).json({ error: 'Unauthorized. Invalid or missing API key.' });
+                }
+            }
+            next();
+        });
 
         // Explicit route for dashboard if needed, or index.html match
         this.app.get('/', (req, res) => {

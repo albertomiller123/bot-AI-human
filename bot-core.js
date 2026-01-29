@@ -89,22 +89,28 @@ class BotCore {
         });
 
         // CRITICAL FIX: Load all plugins safely
-        this.safeLoadPlugin(pathfinder, 'pathfinder');
-        this.safeLoadPlugin(collectBlock, 'collectBlock');
-        this.safeLoadPlugin(toolPlugin, 'toolPlugin');
+        // Critical plugins - bot cannot function without these
+        this.safeLoadPlugin(pathfinder, 'pathfinder', true);
+        // Non-critical plugins - bot can still work without these
+        this.safeLoadPlugin(collectBlock, 'collectBlock', false);
+        this.safeLoadPlugin(toolPlugin, 'toolPlugin', false);
         // ArmorManager v2.0.1 fixed the playerCollect crash, now safe to load
-        this.safeLoadPlugin(armorManager, 'armorManager');
-        // this.safeLoadPlugin(pvp, 'pvp');
+        this.safeLoadPlugin(armorManager, 'armorManager', false);
+        // this.safeLoadPlugin(pvp, 'pvp', false);
 
         this.registerEvents();
     }
 
-    safeLoadPlugin(plugin, name) {
+    safeLoadPlugin(plugin, name, critical = false) {
         try {
             this.bot.loadPlugin(plugin);
             console.log(`[Plugin] Loaded ${name}`);
         } catch (e) {
             console.error(`[Plugin] Failed to load ${name}:`, e);
+            if (critical) {
+                console.error(`[FATAL] Critical plugin "${name}" failed to load. Exiting.`);
+                process.exit(1);
+            }
         }
     }
 

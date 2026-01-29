@@ -14,8 +14,24 @@ process.on('unhandledRejection', (reason, promise) => {
 process.on('uncaughtException', (error) => {
     console.error('[Fatal] Uncaught Exception:', error);
     console.error('[Fatal] Stack:', error.stack);
-    // For critical errors, exit with code 1
-    // PM2 or other process managers will restart
+
+    // Recoverable errors - don't crash
+    const recoverableErrors = [
+        'ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EPIPE',  // Network errors
+        'ENOTFOUND', 'EAI_AGAIN',  // DNS errors
+        'read ECONNRESET'  // Socket errors
+    ];
+
+    const isRecoverable = recoverableErrors.some(errType =>
+        error.message?.includes(errType) || error.code === errType
+    );
+
+    if (isRecoverable) {
+        console.warn('[System] Recoverable error detected, continuing...');
+        return; // Don't exit
+    }
+
+    // For critical errors, exit with code 1 - PM2 will restart
     process.exit(1);
 });
 
