@@ -41,17 +41,28 @@ async function callAI(data) {
     const temperature = modelConfig.temperature;
 
     const tryCall = async (aiClient, isFallback) => {
-        try {
-            const response = await aiClient.chat.completions.create({
-                model: isFallback ? "mistralai/mistral-nemotron" : modelName, // Fallback often has strict model names
+        const makeRequest = async (useJsonMode) => {
+            return await aiClient.chat.completions.create({
+                model: isFallback ? "mistralai/mistral-nemotron" : modelName,
                 messages: [{ role: 'user', content: prompt }],
                 timeout: 60000,
                 max_tokens: maxTokens,
                 temperature: temperature,
-                response_format: jsonMode ? { type: "json_object" } : undefined
+                response_format: useJsonMode ? { type: "json_object" } : undefined
             });
+        };
+
+        try {
+            // First attempt with requested JSON mode
+            const response = await makeRequest(jsonMode);
             return response.choices[0].message.content;
         } catch (e) {
+            // Check for JSON mode incompatibility (usually 400 Bad Request)
+            if (jsonMode && e.status === 400 && e.error?.type === 'invalid_request_error') {
+                console.warn(`[AIWorker] JSON mode failed (400), retrying without response_format...`);
+                const response = await makeRequest(false);
+                return response.choices[0].message.content;
+            }
             throw e;
         }
     };
