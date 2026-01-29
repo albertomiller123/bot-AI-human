@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity OS v2 | Minecraft Edition</title>
+    <!-- Pixel Font -->
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --mc-bg: #1c1c1c;
+            /* Dark Tone */
+            --mc-dirt: #2e2e2e;
+            --mc-btn: #3a3a3a;
+            --mc-btn-hover: #4a4a4a;
+            --mc-border-light: #505050;
+            --mc-border-dark: #111111;
+            --mc-text: #ffffff;
+            --mc-text-shadow: 2px 2px 0px #000000;
+            --mc-green: #55ff55;
+            --mc-red: #ff5555;
+            --mc-gold: #ffaa00;
+            --mc-aqua: #55ffff;
+        }
+
+        * {
+            box-sizing: border-box;
+            scrollbar-width: thin;
+            scrollbar-color: var(--mc-btn) var(--mc-bg);
+        }
+
+        body {
+            background-color: #121212;
+            background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgcHJlc2VydmVBc3BlY3RSYXRpbz0ibm9uZSI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiBmaWxsPSIjMTIxMjEyIi8+PHBhdGggZD0iTTAgMGg2NHY2NEgweiIgZmlsbD0idHJhbnNwYXJlbnQiLz48L3N2Zz4=');
+            /* Fallback */
+            color: var(--mc-text);
+            font-family: 'VT323', monospace;
+            font-size: 20px;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            /* Flex layout for header + main */
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Scanline effect */
+        body::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: repeating-linear-gradient(0deg,
+                    rgba(0, 0, 0, 0.15),
+                    rgba(0, 0, 0, 0.15) 1px,
+                    transparent 1px,
+                    transparent 2px);
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        /* HEADER */
+        header {
+            background-color: #111;
+            border-bottom: 4px solid var(--mc-border-dark);
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 60px;
+            box-shadow: 0 4px 0 rgba(0, 0, 0, 0.5);
+            z-index: 100;
+        }
+
+        h1 {
+            margin: 0;
+            color: var(--mc-gold);
+            text-shadow: var(--mc-text-shadow);
+            font-size: 32px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        /* MAIN LAYOUT */
+        main {
+            display: grid;
+            grid-template-columns: 350px 1fr 350px;
+            /* Left (Trooper) - Center (Vision) - Right (Commander) */
+            flex: 1;
+            overflow: hidden;
+            padding: 10px;
+            gap: 10px;
+        }
+
+        /* PANELS */
+        .panel {
+            background-color: rgba(30, 30, 30, 0.9);
+            border: 3px solid var(--mc-border-dark);
+            border-left-color: var(--mc-border-light);
+            border-top-color: var(--mc-border-light);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .panel-header {
+            background-color: rgba(0, 0, 0, 0.3);
+            padding: 8px 10px;
+            font-size: 24px;
+            color: #aaa;
+            text-shadow: 1px 1px 0 #000;
+            border-bottom: 2px solid var(--mc-border-dark);
+            text-align: center;
+        }
+
+        /* VISION AREA */
+        #vision-panel {
+            background-color: #000;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        iframe {
+            border: none;
+            width: 100%;
+            height: 100%;
+            flex: 1;
+        }
+
+        .offline-placeholder {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #555;
+            font-size: 30px;
+            text-shadow: 2px 2px 0 #000;
+        }
+
+        /* LOGS */
+        .log-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            font-family: 'VT323', monospace;
+            font-size: 18px;
+            line-height: 1.2;
+            word-wrap: break-word;
+        }
+
+        .log-entry {
+            margin-bottom: 6px;
+        }
+
+        .log-entry.chat {
+            color: var(--mc-aqua);
+        }
+
+        .log-entry.reflex {
+            color: var(--mc-green);
+        }
+
+        .log-entry.strategy {
+            color: var(--mc-gold);
+        }
+
+        .log-entry.system {
+            color: #888;
+        }
+
+        .log-entry.error {
+            color: var(--mc-red);
+        }
+
+        /* HUD & CONTROLS */
+        .hud-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            padding: 10px;
+            gap: 10px;
+            background: rgba(0, 0, 0, 0.2);
+            border-bottom: 2px solid var(--mc-border-dark);
+        }
+
+        .stat-box {
+            text-align: center;
+        }
+
+        .stat-label {
+            color: #888;
+            font-size: 16px;
+            display: block;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            color: var(--mc-text);
+            text-shadow: 1px 1px 0 #000;
+        }
+
+        .btn-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            padding: 10px;
+        }
+
+        /* MINECRAFT BUTTONS */
+        button {
+            background: #757575;
+            border: 3px solid #000;
+            border-top-color: #a0a0a0;
+            border-left-color: #a0a0a0;
+            color: #fff;
+            padding: 10px 0;
+            font-family: 'VT323', monospace;
+            font-size: 22px;
+            text-shadow: 2px 2px 0 #000;
+            cursor: pointer;
+            position: relative;
+        }
+
+        button:active {
+            border: 3px solid #000;
+            border-bottom-color: #a0a0a0;
+            border-right-color: #a0a0a0;
+            background: #505050;
+        }
+
+        button.primary {
+            background: #3c8527;
+            border-top-color: #5bb344;
+            border-left-color: #5bb344;
+        }
+
+        button.primary:active {
+            background: #2a611c;
+            border-bottom-color: #5bb344;
+            border-right-color: #5bb344;
+        }
+
+        button.danger {
+            background: #8f2020;
+            border-top-color: #d15656;
+            border-left-color: #d15656;
+        }
+
+        /* Input specific */
+        .god-input-area {
+            padding: 10px;
+            display: flex;
+            gap: 5px;
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        input[type="text"] {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #555;
+            color: #fff;
+            font-family: 'VT323', monospace;
+            font-size: 20px;
+            padding: 5px 10px;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--mc-gold);
+        }
+
+        /* Scrollbars */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #111;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #555;
+            border: 2px solid #111;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>ANTIGRAVITY OS <span style="font-size: 20px; color: #666;">v2.0</span></h1>
+        <div id="connection-status" style="color: var(--mc-red);">OFFLINE</div>
+    </header>
+
+    <main>
+        <!-- LEFT: REFLEX BRAIN (Trooper) -->
+        <div class="panel">
+            <div class="panel-header" style="color: var(--mc-green);">[ SYSTEM 1 : REFLEX ]</div>
+
+            <div class="hud-grid">
+                <div class="stat-box">
+                    <span class="stat-label">HEALTH</span>
+                    <span class="stat-value" style="color: var(--mc-red);">
+                        <span id="health">--</span> ❤
+                    </span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label">FOOD</span>
+                    <span class="stat-value" style="color: var(--mc-gold);">
+                        <span id="food">--</span> 🍗
+                    </span>
+                </div>
+            </div>
+
+            <div id="reflex-log" class="log-container">
+                <div class="log-entry system">Initializing Reflex Systems...</div>
+            </div>
+
+            <div class="btn-grid">
+                <button onclick="sendCommand('come')">COME</button>
+                <button onclick="sendCommand('stop')" class="danger">STOP</button>
+                <button onclick="sendCommand('guard_toggle')" class="primary">GUARD</button>
+                <button onclick="sendCommand('sethome')">SET HOME</button>
+            </div>
+
+            <!-- Movement Controls -->
+            <div style="padding: 10px; border-top: 2px solid var(--mc-border-dark);">
+                <span class="stat-label">MOVEMENT</span>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top: 8px;">
+                    <div></div>
+                    <button onclick="sendCommand('move_forward')" style="font-size: 18px;">↑ W</button>
+                    <div></div>
+                    <button onclick="sendCommand('move_left')" style="font-size: 18px;">← A</button>
+                    <button onclick="sendCommand('jump')" style="font-size: 18px;">⬆ JUMP</button>
+                    <button onclick="sendCommand('move_right')" style="font-size: 18px;">D →</button>
+                    <div></div>
+                    <button onclick="sendCommand('move_back')" style="font-size: 18px;">↓ S</button>
+                    <div></div>
+                </div>
+            </div>
+
+            <!-- Quick Chat -->
+            <div style="padding: 10px; border-top: 2px solid var(--mc-border-dark);">
+                <span class="stat-label">QUICK CHAT</span>
+                <div style="display: flex; gap: 5px; margin-top: 8px;">
+                    <input type="text" id="chat-input" placeholder="Say something..." style="flex: 1; font-size: 16px;"
+                        onkeydown="if(event.key==='Enter') sendChat()">
+                    <button onclick="sendChat()" style="width: 60px;">SAY</button>
+                </div>
+            </div>
+
+            <!-- Tactical Buttons -->
+            <div class="btn-grid" style="border-top: 2px solid var(--mc-border-dark); padding-top: 10px;">
+                <button onclick="sendCommand('eat')" style="background: #3c6e27;">🍖 EAT</button>
+                <button onclick="sendCommand('attack_nearest')" class="danger">⚔️ ATTACK</button>
+                <button onclick="sendCommand('look_random')">👁️ LOOK</button>
+                <button onclick="sendCommand('wander')">🚶 WANDER</button>
+            </div>
+        </div>
+
+        <!-- CENTER: VISION VISUALIZATION -->
+        <div class="panel" id="vision-panel">
+            <div class="panel-header" style="color: var(--mc-aqua);">[ VISION FEED ]</div>
+
+            <!-- Vision Iframe (Port 3008) -->
+            <iframe id="vision-frame" src="http://localhost:3008" allow="fullscreen"></iframe>
+            <div id="vision-placeholder" class="offline-placeholder">VISION OFFLINE</div>
+
+            <!-- God Input -->
+            <div class="god-input-area">
+                <span style="font-size: 24px; color: var(--mc-gold); padding-top: 5px;">></span>
+                <input type="text" id="whisper-input" placeholder="Inject Divine Command..."
+                    onkeydown="if(event.key==='Enter') sendWhisper()">
+                <button class="primary" onclick="sendWhisper()" style="width: 80px; padding: 2px;">SEND</button>
+            </div>
+        </div>
+
+        <!-- RIGHT: STRATEGY BRAIN (Commander) -->
+        <div class="panel">
+            <div class="panel-header" style="color: var(--mc-gold);">[ SYSTEM 2 : STRATEGY ]</div>
+
+            <div style="padding: 10px; border-bottom: 2px solid var(--mc-border-dark);">
+                <span class="stat-label">CURRENT_OBJECTIVE</span>
+                <div id="task" style="color: var(--mc-aqua); font-size: 20px;">IDLE</div>
+            </div>
+
+            <div style="padding: 10px; border-bottom: 2px solid var(--mc-border-dark);">
+                <span class="stat-label">COORDINATES</span>
+                <div id="pos" style="color: #aaa;">-- / -- / --</div>
+            </div>
+
+            <div id="strategy-log" class="log-container">
+                <div class="log-entry system">Waiting for high-level plan...</div>
+            </div>
+
+            <div style="padding: 10px; background: rgba(0,0,0,0.3);">
+                <label style="display: block; margin-bottom: 5px; cursor: pointer;">
+                    <input type="checkbox" id="chk-autoloot" checked onchange="updateConfig()"> [x] AUTO_LOOT_V2
+                </label>
+                <label style="display: block; cursor: pointer;">
+                    <input type="checkbox" id="chk-spawner" checked onchange="updateConfig()"> [x] TACTICAL_MODE
+                </label>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Update Loop
+        setInterval(async () => {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+
+                const frame = document.getElementById('vision-frame');
+                const placeholder = document.getElementById('vision-placeholder');
+                const statusEl = document.getElementById('connection-status');
+
+                if (data.status === 'online') {
+                    statusEl.innerText = 'ONLINE';
+                    statusEl.style.color = 'var(--mc-green)';
+                    placeholder.style.display = 'none';
+
+                    // Update HUD
+                    document.getElementById('health').innerText = Math.round(data.health);
+                    document.getElementById('food').innerText = Math.round(data.food);
+                    document.getElementById('task').innerText = data.task || "IDLE";
+
+                    if (data.position) {
+                        document.getElementById('pos').innerText =
+                            `X:${Math.floor(data.position.x)} Y:${Math.floor(data.position.y)} Z:${Math.floor(data.position.z)}`;
+                    }
+
+                    // Dual Brain Log Splitter
+                    if (data.chatLog) {
+                        processLogs(data.chatLog);
+                    }
+                } else {
+                    statusEl.innerText = 'OFFLINE';
+                    statusEl.style.color = 'var(--mc-red)';
+                }
+            } catch (e) {
+                document.getElementById('connection-status').innerText = 'DISCONNECTED';
+            }
+        }, 1000);
+
+        // Crude but effective log splitter
+        const reflexLog = document.getElementById('reflex-log');
+        const strategyLog = document.getElementById('strategy-log');
+        let processedLogs = new Set(); // Simple dedupe for this session
+
+        function processLogs(logs) {
+            // Clear if too long to prevent memory leak
+            if (reflexLog.children.length > 100) reflexLog.innerHTML = '';
+            if (strategyLog.children.length > 100) strategyLog.innerHTML = '';
+
+            // Note: In a real app we'd use IDs. 
+            // For now, we just grab the last 10 and verify duplication roughly or just append new ones if we had a proper ID system.
+            // Since the API sends the WHOLE log history (likely limited by N), we should probably clear and rebuild 
+            // OR strictly enable "Atomic Append" if API supported "since=" query.
+            // For this audit, let's CLEAR and REBUILD to ensure sync, but it might flicker.
+            // BETTER: Just taking the last N items.
+
+            reflexLog.innerHTML = '';
+            strategyLog.innerHTML = '';
+
+            logs.forEach(log => {
+                const div = document.createElement('div');
+                div.className = 'log-entry';
+
+                // Content Analysis for Classification
+                const content = (log.content || "").toString();
+
+                if (content.includes('[Reflex]') || log.role === 'trooper' || content.length < 20) {
+                    // Reflex / Chat
+                    div.classList.add('reflex');
+                    div.innerText = `> ${content}`;
+                    reflexLog.appendChild(div);
+                } else if (content.includes('Plan:') || content.includes('Thinking') || log.role === 'commander' || content.length > 50) {
+                    // Strategy
+                    div.classList.add('strategy');
+                    div.innerText = `> ${content}`;
+                    strategyLog.appendChild(div);
+                } else {
+                    // Default to Reflex (Chat)
+                    div.classList.add('chat');
+                    div.innerText = `${log.role}: ${content}`;
+                    reflexLog.appendChild(div);
+                }
+            });
+
+            reflexLog.scrollTop = reflexLog.scrollHeight;
+            strategyLog.scrollTop = strategyLog.scrollHeight;
+        }
+
+        async function sendCommand(cmd) {
+            const btn = event.target;
+            btn.style.color = '#ffff55';
+            setTimeout(() => btn.style.color = '#fff', 200);
+
+            await fetch('/api/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: cmd })
+            });
+        }
+
+        async function sendWhisper() {
+            const input = document.getElementById('whisper-input');
+            const text = input.value;
+            if (!text) return;
+
+            await fetch('/api/god-whisper', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text })
+            });
+            input.value = '';
+        }
+
+        async function updateConfig() {
+            // Config sync logic here
+        }
+
+        async function sendChat() {
+            const input = document.getElementById('chat-input');
+            const text = input.value;
+            if (!text) return;
+
+            await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text })
+            });
+            input.value = '';
+        }
+    </script>
+</body>
+
+</html>

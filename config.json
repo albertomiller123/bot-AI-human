@@ -1,0 +1,36 @@
+{
+  "bot": {
+    "host": "localhost",
+    "port": 5000,
+    "username": "AI_Bot_QA",
+    "version": "1.21.1",
+    "auth": "offline"
+  },
+  "owner": {
+    "name": "thinhdzs1vn"
+  },
+  "settings": {
+    "actionPrefix": ""
+  },
+  "ai": {
+    "slow": {
+      "model": "openai-gpt-oss-20b",
+      "purpose": "vision_planning_critic"
+    },
+    "fast": {
+      "model": "mistralai/mistral-nemotron",
+      "purpose": "reflex_execution_chat"
+    },
+    "baseURL": "https://ai.megallm.io/v1"
+  },
+  "plugins": {
+    "viewer": {
+      "enabled": false,
+      "port": 3009
+    },
+    "vision": {
+      "enabled": false,
+      "port": 3008
+    }
+  }
+}

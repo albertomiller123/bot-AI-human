@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Environment
+.env
+.env.local
+
+# Database
+memory.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Agent & AI
+.agent/
+.brain/
+.gemini/
+plans/
+reports/
+
+# Logs
+logs/
+*.log
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Temp
+temp/
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db
