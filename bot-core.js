@@ -96,7 +96,7 @@ class BotCore {
         this.safeLoadPlugin(toolPlugin, 'toolPlugin', false);
         // ArmorManager v2.0.1 fixed the playerCollect crash, now safe to load
         this.safeLoadPlugin(armorManager, 'armorManager', false);
-        // this.safeLoadPlugin(pvp, 'pvp', false);
+        this.safeLoadPlugin(pvp, 'pvp', false);
 
         this.registerEvents();
     }

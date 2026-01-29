@@ -142,6 +142,30 @@ class TaskManager {
 
         console.log(`[TaskManager] Executing step ${this.currentStepIndex + 1}/${this.activeTask.steps.length}: ${step.action} ${JSON.stringify(step.params || {})}`);
 
+        // Legacy to Snake_Case Action Mapping (for backward compatibility)
+        const actionMap = {
+            'sayMessage': 'send_chat',
+            'findAndCollect': 'gather_resource',
+            'attackTarget': 'attack_target',
+            'equipBestWeapon': 'equip_weapon',
+            'equipBestArmor': 'equip_armor',
+            'equipBestTool': 'equip_tool',
+            'goToPosition': 'move_to',
+            'craftItem': 'craft_item',
+            'followPlayer': 'follow_player',
+            'rememberLocation': 'remember_location',
+            'listKnownLocations': 'list_locations',
+            'stopActions': 'stop_and_wait',
+            'eatUntilFull': 'eat_food',
+            'placeBlockAt': 'place_block',
+            'giveItemToPlayer': 'give_item',
+            'flattenArea': 'flatten_area'
+        };
+        if (actionMap[step.action]) {
+            console.log(`[TaskManager] Mapping legacy action '${step.action}' -> '${actionMap[step.action]}'`);
+            step.action = actionMap[step.action];
+        }
+
         // Legacy Mapping Removed - All actions should now be standard
         // if (step.action === 'flattenArea') step.action = 'flatten_area';
 
