@@ -75,22 +75,37 @@ class AIManager {
      * Model: mistralai/mistral-nemotron
      */
     async fast(prompt, jsonMode = false) {
-        if (!this.client) return null;
+        if (!this.client && !this.fallbackClient) return null;
 
-        try {
-            const response = await this.client.chat.completions.create({
-                model: this.config.fast.model,
-                messages: [{ role: 'user', content: prompt }],
-                max_tokens: this.config.fast.max_tokens,
-                temperature: this.config.fast.temperature,
-                response_format: jsonMode ? { type: "json_object" } : undefined
-            });
+        const tryClient = async (client, type) => {
+            try {
+                const response = await client.chat.completions.create({
+                    model: type === 'main' ? this.config.fast.model : "mistralai/mistral-nemotron", // Fallback usually same or similar
+                    messages: [{ role: 'user', content: prompt }],
+                    max_tokens: this.config.fast.max_tokens,
+                    temperature: this.config.fast.temperature,
+                    response_format: jsonMode ? { type: "json_object" } : undefined
+                });
+                return response.choices[0].message.content;
+            } catch (error) {
+                console.error(`[AIManager/Fast] ${type} Error: ${error.message}`);
+                return null;
+            }
+        };
 
-            return response.choices[0].message.content;
-        } catch (error) {
-            console.error(`[AIManager/Fast] Error: ${error.message}`);
-            return null;
+        // Try Main Client
+        if (this.client) {
+            const result = await tryClient(this.client, 'main');
+            if (result) return result;
         }
+
+        // Try Fallback Client
+        if (this.fallbackClient) {
+            console.warn("[AIManager] ⚠️ Primary Fast AI failed. Switching to Fallback...");
+            return await tryClient(this.fallbackClient, 'fallback');
+        }
+
+        return null;
     }
 
     /**
@@ -98,23 +113,38 @@ class AIManager {
      * Model: openai-gpt-oss-20b
      */
     async slow(prompt, jsonMode = false) {
-        if (!this.client) return null;
+        if (!this.client && !this.fallbackClient) return null;
 
-        try {
-            console.log("[AIManager] System 2 Thinking...");
-            const response = await this.client.chat.completions.create({
-                model: this.config.slow.model,
-                messages: [{ role: 'user', content: prompt }],
-                max_tokens: this.config.slow.max_tokens,
-                temperature: this.config.slow.temperature,
-                response_format: jsonMode ? { type: "json_object" } : undefined
-            });
+        const tryClient = async (client, type) => {
+            try {
+                if (type === 'main') console.log("[AIManager] System 2 Thinking...");
+                const response = await client.chat.completions.create({
+                    model: type === 'main' ? this.config.slow.model : "openai-gpt-oss-20b",
+                    messages: [{ role: 'user', content: prompt }],
+                    max_tokens: this.config.slow.max_tokens,
+                    temperature: this.config.slow.temperature,
+                    response_format: jsonMode ? { type: "json_object" } : undefined
+                });
+                return response.choices[0].message.content;
+            } catch (error) {
+                console.error(`[AIManager/Slow] ${type} Error: ${error.message}`);
+                return null;
+            }
+        };
 
-            return response.choices[0].message.content;
-        } catch (error) {
-            console.error(`[AIManager/Slow] Error: ${error.message}`);
-            return null;
+        // Try Main Client
+        if (this.client) {
+            const result = await tryClient(this.client, 'main');
+            if (result) return result;
         }
+
+        // Try Fallback Client
+        if (this.fallbackClient) {
+            console.warn("[AIManager] ⚠️ Primary Slow AI failed. Switching to Fallback...");
+            return await tryClient(this.fallbackClient, 'fallback');
+        }
+
+        return null;
     }
 }
 

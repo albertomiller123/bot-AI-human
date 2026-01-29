@@ -13,6 +13,12 @@ class GatherBehavior {
     async gatherResource(resourceName, count = 1) {
         console.log(`[Gather] Starting to gather ${count} ${resourceName} (range: ${this.maxSearchDistance})...`);
 
+        // 0. Check Inventory Full
+        if (this.bot.inventory.emptySlotCount() === 0) {
+            console.warn("[Gather] ⚠️ Inventory is FULL. Cannot gather more items.");
+            return false;
+        }
+
         // 1. Identify block type
         const blocks = this.findBlocks(resourceName, count);
         if (blocks.length === 0) {
@@ -29,14 +35,30 @@ class GatherBehavior {
             if (!block || block.name !== resourceName && !block.name.includes(resourceName.replace('_log', ''))) continue;
 
             try {
-                // 2. Equip Best Tool
+                // 2. Equip Best Tool (with durability check)
+                // Note: bot.tool.equipForBlock automatically tries to pick best tool, but doesn't check low durability by default unless configured.
+                // We add a manual check here if possible or just rely on standard equip.
+                // Better safety:
+                const tool = this.bot.pathfinder.bestHarvestTool(block);
+                if (tool && (tool.maxDurability - tool.durabilityUsed) < 10) {
+                    console.warn(`[Gather] ⚠️ Tool ${tool.name} is about to break! (Durability < 10). Skipping to avoid breaking it.`);
+                    continue;
+                }
+
                 await this.bot.tool.equipForBlock(block, {});
 
                 // 3. Move to block
                 await this.bot.pathfinder.goto(new GoalBlock(block.position.x, block.position.y, block.position.z));
 
+                // 3.5. Re-check block existence (Race Condition Fix)
+                const targetBlock = this.bot.blockAt(block.position);
+                if (!targetBlock || targetBlock.name !== block.name) {
+                    console.log(`[Gather] Block ${resourceName} at ${block.position} is gone or changed!`);
+                    continue;
+                }
+
                 // 4. Mine
-                await this.bot.dig(block);
+                await this.bot.dig(targetBlock); // Use fresh block reference
                 gathered++;
             } catch (err) {
                 console.log(`[Gather] Error mining ${resourceName}: ${err.message}`);

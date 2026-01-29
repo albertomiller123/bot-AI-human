@@ -57,6 +57,11 @@ class TaskManager {
                             timestamp: Date.now()
                         });
 
+                        // Fix Memory Leak: Cap failed attempts at 50
+                        if (this.failedAttempts.length > 50) {
+                            this.failedAttempts.shift();
+                        }
+
                         // Retry failed 3 times, let's ask AI for help
                         console.log(`[TaskManager] cay vcl, bi ket o cho '${step.action}'. de hoi thg @AI xem sao...`);
                         try {
@@ -79,11 +84,16 @@ class TaskManager {
                                 console.log(`[TaskManager] ok ngon, thay cach fix roi: ${repairPlan.complex_task}`);
 
                                 // Insert repair steps before the current failed step
-                                this.activeTask.steps.splice(this.currentStepIndex, 0, ...repairPlan.steps);
+                                if (repairPlan.steps.length > 0) {
+                                    this.activeTask.steps.splice(this.currentStepIndex, 0, ...repairPlan.steps);
 
-                                // Decrement index so next loop iteration executes the first new step
-                                this.currentStepIndex--;
-                                success = true; // Pretend success to continue loop
+                                    // Decrement index so next loop iteration executes the first new step
+                                    this.currentStepIndex--;
+                                    success = true; // Pretend success to continue loop
+                                } else {
+                                    console.warn("[TaskManager] AI returned empty repair plan.");
+                                    attempts++; // Consider this a failed attempt still
+                                }
                             } else {
                                 throw new Error("AI chịu chết.");
                             }
@@ -99,10 +109,19 @@ class TaskManager {
 
             const isPersistent = step.is_persistent || this.persistentActions.has(step.action);
             if (isPersistent && !this.shouldStop) {
+                console.log(`[TaskManager] Starting persistent task: ${step.action}. Queue will process next items only if not blocked.`);
                 this.startPersistentTaskMonitoring(step.action);
-                while (!this.shouldStop) {
-                    await new Promise(resolve => setTimeout(resolve, 250));
-                }
+                // CRITICAL FIX: Removed blocking while-loop.
+                // The task is "technically" done in terms of setup, but the background interval keeps it running.
+                // We break here to allow the TaskManager to return to idle (or handle next queue items if designed for parallel).
+                // For now, we assume single-threaded task execution, so this task remains "active" until stopCurrentTask is called.
+                // However, blocking the thread prevents inputs.
+                // Approach: We finish this *step* loop, but keeping the bot "busy" is handled by the overall state being 'busy' until explicitly stopped?
+                // Actually, for "follow", we normally just want to set it and forget it until a stop command.
+
+                // If we treat this as "Task Complete" (so state goes IDLE), users can issue new commands.
+                // The persistent interval will keep running. A new task will execute in parallel (or override if it conflicts).
+                break;
             }
 
             if (!this.shouldStop) {

@@ -97,6 +97,13 @@ class MemoryManager {
 
     // Legacy method (kept for backward compatibility)
     async saveChest(pos, items) {
+        // Sync with Normalized Table
+        try {
+            await this.saveChestItems(pos, items);
+        } catch (e) {
+            console.error("[MemoryManager] Warning: Failed to sync chest_items:", e.message);
+        }
+
         const posKey = `${pos.x},${pos.y},${pos.z}`;
         const itemsJson = JSON.stringify(items);
         return new Promise((resolve, reject) => {
