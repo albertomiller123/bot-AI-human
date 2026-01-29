@@ -68,8 +68,8 @@ class VisualCortex {
 
     /**
      * Capture current POV as Base64 image
-     * Note: prismarine-viewer doesn't have direct buffer capture built-in.
-     * We'll use an alternative approach with Puppeteer or return server URL.
+     * NOTE: prismarine-viewer doesn't have direct buffer capture.
+     * FIXED: Return text description instead of localhost URL (LLMs can't access localhost)
      */
     async captureScreenshot() {
         if (!this.isInitialized) {
@@ -81,16 +81,17 @@ class VisualCortex {
         }
 
         try {
-            // For now, return the viewer URL that LLM can reference
-            // In production, you'd use Puppeteer to screenshot localhost:3008
-            const viewerUrl = `http://localhost:3008`;
-
+            // IMPORTANT: LLMs cannot access localhost URLs
+            // Return text description instead of URL
+            const visualContext = this.getVisualContext();
             return {
                 success: true,
-                message: 'Vision available',
+                message: 'Visual context available (text-only)',
                 data: {
-                    type: 'viewer_url',
-                    url: viewerUrl,
+                    type: 'text_description',
+                    description: visualContext.description,
+                    lookingAt: visualContext.lookingAt,
+                    camera: visualContext.camera,
                     timestamp: Date.now()
                 }
             };
@@ -174,35 +175,38 @@ class VisualCortex {
 
     /**
      * Scan for notable blocks nearby (chests, crafting tables, furnaces, etc.)
+     * OPTIMIZED: Single findBlocks call instead of looping through each type
      */
     _scanNearbyNotableBlocks() {
+        const mcData = this.botCore.mcData;
+        if (!mcData) return [];
+
         const notableTypes = [
             'chest', 'crafting_table', 'furnace', 'blast_furnace', 'smoker',
-            'anvil', 'enchanting_table', 'brewing_stand', 'bed', 'door'
+            'anvil', 'enchanting_table', 'brewing_stand', 'bed'
         ];
 
-        const found = [];
-        const mcData = this.botCore.mcData;
+        // Collect all valid block IDs into one array
+        const blockIds = notableTypes
+            .map(name => mcData.blocksByName[name]?.id)
+            .filter(id => id !== undefined);
 
-        for (const typeName of notableTypes) {
-            const blockType = mcData.blocksByName[typeName];
-            if (!blockType) continue;
+        if (blockIds.length === 0) return [];
 
-            const blocks = this.bot.findBlocks({
-                matching: blockType.id,
-                maxDistance: 16,
-                count: 3
-            });
+        // Single findBlocks call with multiple IDs (much faster!)
+        const positions = this.bot.findBlocks({
+            matching: blockIds,
+            maxDistance: 16,
+            count: 20
+        });
 
-            for (const pos of blocks) {
-                found.push({
-                    name: typeName,
-                    position: pos
-                });
-            }
-        }
-
-        return found;
+        return positions.map(pos => {
+            const block = this.bot.blockAt(pos);
+            return {
+                name: block?.name || 'unknown',
+                position: pos
+            };
+        });
     }
 
     /**

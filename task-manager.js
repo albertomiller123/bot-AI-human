@@ -11,6 +11,10 @@ class TaskManager {
         this.persistentActions = new Set(['follow_player', 'attack_target']);
         this.persistentTaskInterval = null;
         this.failedAttempts = []; // Track failed actions to prevent infinite loops
+
+        // FIX: Global fail counter to prevent infinite correction loops
+        this.globalFailCount = 0;
+        this.MAX_GLOBAL_FAILS = 5; // Abort task after 5 total corrections fail
     }
 
     get isBusy() { return this.state !== 'idle'; }
@@ -85,6 +89,16 @@ class TaskManager {
 
                                 // Insert repair steps before the current failed step
                                 if (repairPlan.steps.length > 0) {
+                                    // FIX: Increment global counter and check limit
+                                    this.globalFailCount++;
+
+                                    if (this.globalFailCount >= this.MAX_GLOBAL_FAILS) {
+                                        console.error(`[TaskManager] Task failed after ${this.MAX_GLOBAL_FAILS} correction attempts. Aborting.`);
+                                        this.shouldStop = true;
+                                        this.botCore.say("Loi qua nhieu, huy nhiem vu.");
+                                        break;
+                                    }
+
                                     this.activeTask.steps.splice(this.currentStepIndex, 0, ...repairPlan.steps);
 
                                     // Decrement index so next loop iteration executes the first new step
@@ -249,6 +263,8 @@ class TaskManager {
         }
         this.activeTask = null;
         this.state = 'idle';
+        // FIX: Reset global fail counter for next task
+        this.globalFailCount = 0;
     }
 
     stopCurrentTask() {

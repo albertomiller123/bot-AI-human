@@ -1,12 +1,22 @@
+// Danh sách thức ăn được chấp nhận (saturation từ cao đến thấp)
+const ACCEPTABLE_FOODS = [
+    'cooked_beef', 'cooked_porkchop', 'cooked_mutton',
+    'cooked_chicken', 'cooked_rabbit', 'cooked_salmon',
+    'cooked_cod', 'bread', 'baked_potato', 'golden_carrot',
+    'golden_apple', 'apple', 'carrot', 'melon_slice', 'sweet_berries'
+];
+
 class GoalArbitrator {
     constructor(botCore) {
         this.botCore = botCore;
         this.bot = botCore.bot;
 
         // Define hierarchy of needs/goals
+        // FIX: Health priority (100) > Food priority (95)
+        // Bot phải hồi máu trước khi đi tìm thức ăn
         this.goals = [
-            { id: 'survival_food', priority: 100, check: () => this.needsFood() },
-            { id: 'survival_health', priority: 90, check: () => this.needsHealth() },
+            { id: 'survival_health', priority: 100, check: () => this.needsHealth() },
+            { id: 'survival_food', priority: 95, check: () => this.needsFood() },
             { id: 'progression_iron', priority: 50, check: () => this.needsIron() },
             { id: 'progression_diamond', priority: 40, check: () => this.needsDiamond() },
             { id: 'progression_nether', priority: 30, check: () => this.readyForNether() }
@@ -59,11 +69,22 @@ class GoalArbitrator {
 
     needsFood() {
         // Start looking for food at 12, critical at 6
-        return this.bot.food < 12 && this.countItem('cooked_beef') < 16;
+        // FIX: Count ALL acceptable foods, not just cooked_beef
+        const totalFood = this.countTotalFood();
+        return this.bot.food < 12 && totalFood < 16;
     }
 
     needsHealth() {
         return this.bot.health < 12; // Hurt
+    }
+
+    /**
+     * Count total food items from acceptable food list
+     */
+    countTotalFood() {
+        return ACCEPTABLE_FOODS.reduce((total, foodName) => {
+            return total + this.countItem(foodName);
+        }, 0);
     }
 
     needsIron() {
@@ -82,7 +103,8 @@ class GoalArbitrator {
 
     readyForNether() {
         if (this.needsDiamond()) return false; // Strict Hierarchy: Diamond FIRST
-        const hasFood = this.countItem('cooked_beef') > 32;
+        // FIX: Use countTotalFood() instead of just cooked_beef
+        const hasFood = this.countTotalFood() > 32;
         return hasFood;
     }
 
