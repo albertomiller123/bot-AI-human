@@ -23,7 +23,7 @@ class AILayer {
 
         // CRITICAL FIX: Initialize Router and Reflex sub-agents
         const apiKey = process.env.MEGALLM_API_KEY;
-        const baseURL = 'https://ai.megallm.io/v1';
+        const baseURL = process.env.AI_BASE_URL || 'https://ai.megallm.io/v1';
 
         if (apiKey) {
             this.router = new AIRouter(apiKey, baseURL);
@@ -251,62 +251,126 @@ Output ONLY a JSON array: ["step1", "step2"]`;
     }
 
     /**
+     * Repair common JSON issues from LLM output
+     */
+    _repairJSON(content) {
+        if (!content || typeof content !== 'string') return content;
+
+        let repaired = content.trim();
+
+        // 1. Remove markdown code block wrappers
+        const codeBlockMatch = repaired.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (codeBlockMatch) {
+            repaired = codeBlockMatch[1].trim();
+        }
+
+        // 2. Remove BOM and control characters (except newlines/tabs)
+        repaired = repaired.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+
+        // 3. Fix trailing commas before } or ]
+        repaired = repaired.replace(/,\s*([}\]])/g, '$1');
+
+        // 4. Fix single quotes to double quotes (careful with apostrophes)
+        // Only replace quotes that look like JSON string delimiters
+        repaired = repaired.replace(/'([^']*)'(\s*[,:\]}])/g, '"$1"$2');
+        repaired = repaired.replace(/(\s*[\[{,:])\s*'([^']*)'/g, '$1"$2"');
+
+        // 5. Fix missing closing brackets (simple heuristic)
+        const openBraces = (repaired.match(/{/g) || []).length;
+        const closeBraces = (repaired.match(/}/g) || []).length;
+        const openBrackets = (repaired.match(/\[/g) || []).length;
+        const closeBrackets = (repaired.match(/]/g) || []).length;
+
+        if (openBraces > closeBraces) {
+            repaired += '}'.repeat(openBraces - closeBraces);
+        }
+        if (openBrackets > closeBrackets) {
+            repaired += ']'.repeat(openBrackets - closeBrackets);
+        }
+
+        // 6. Remove text before first { or [ (LLM often adds explanations)
+        const firstBrace = repaired.indexOf('{');
+        const firstBracket = repaired.indexOf('[');
+        let startIndex = -1;
+
+        if (firstBrace !== -1 && firstBracket !== -1) {
+            startIndex = Math.min(firstBrace, firstBracket);
+        } else if (firstBrace !== -1) {
+            startIndex = firstBrace;
+        } else if (firstBracket !== -1) {
+            startIndex = firstBracket;
+        }
+
+        if (startIndex > 0) {
+            repaired = repaired.substring(startIndex);
+        }
+
+        return repaired;
+    }
+
+    /**
      * Parse JSON from LLM response (handles markdown code blocks)
+     * Now with repair logic for robustness
      */
     _parseJSON(content) {
+        if (!content) return null;
+
+        // Strategy 1: Direct parse
         try {
-            // Try direct parse
             return JSON.parse(content.trim());
-        } catch {
-            // Try extracting from markdown
-            const match = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-            if (match) {
-                try {
-                    return JSON.parse(match[1].trim());
-                } catch {
-                    return null;
-                }
-            }
-            // Try finding JSON object
-            const objMatch = content.match(/\{[\s\S]*\}/);
-            if (objMatch) {
-                try {
-                    return JSON.parse(objMatch[0]);
-                } catch {
-                    return null;
-                }
-            }
-            return null;
+        } catch { /* continue */ }
+
+        // Strategy 2: Parse repaired content
+        const repaired = this._repairJSON(content);
+        try {
+            return JSON.parse(repaired);
+        } catch { /* continue */ }
+
+        // Strategy 3: Extract JSON object with regex
+        const objMatch = content.match(/\{[\s\S]*\}/);
+        if (objMatch) {
+            try {
+                const repairedObj = this._repairJSON(objMatch[0]);
+                return JSON.parse(repairedObj);
+            } catch { /* continue */ }
         }
+
+        console.warn('[AILayer] JSON parse failed after all strategies');
+        return null;
     }
 
     /**
      * Parse JSON array from LLM response
+     * Now with repair logic for robustness
      */
     _parseJSONArray(content) {
+        if (!content) return null;
+
+        // Strategy 1: Direct parse
         try {
             const parsed = JSON.parse(content.trim());
             return Array.isArray(parsed) ? parsed : null;
-        } catch {
-            const match = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-            if (match) {
-                try {
-                    const parsed = JSON.parse(match[1].trim());
-                    return Array.isArray(parsed) ? parsed : null;
-                } catch {
-                    return null;
-                }
-            }
-            const arrMatch = content.match(/\[[\s\S]*\]/);
-            if (arrMatch) {
-                try {
-                    return JSON.parse(arrMatch[0]);
-                } catch {
-                    return null;
-                }
-            }
-            return null;
+        } catch { /* continue */ }
+
+        // Strategy 2: Parse repaired content
+        const repaired = this._repairJSON(content);
+        try {
+            const parsed = JSON.parse(repaired);
+            return Array.isArray(parsed) ? parsed : null;
+        } catch { /* continue */ }
+
+        // Strategy 3: Extract JSON array with regex
+        const arrMatch = content.match(/\[[\s\S]*\]/);
+        if (arrMatch) {
+            try {
+                const repairedArr = this._repairJSON(arrMatch[0]);
+                const parsed = JSON.parse(repairedArr);
+                return Array.isArray(parsed) ? parsed : null;
+            } catch { /* continue */ }
         }
+
+        console.warn('[AILayer] JSON array parse failed after all strategies');
+        return null;
     }
 
     // Legacy compatibility

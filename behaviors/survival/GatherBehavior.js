@@ -6,15 +6,17 @@ class GatherBehavior {
         this.botCore = botCore;
         this.bot = botCore.bot;
         this.mcData = null; // Defer init
+        // Configurable search range (default 128, was 64)
+        this.maxSearchDistance = botCore.config?.gather?.maxDistance || 128;
     }
 
     async gatherResource(resourceName, count = 1) {
-        console.log(`[Gather] Starting to gather ${count} ${resourceName}...`);
+        console.log(`[Gather] Starting to gather ${count} ${resourceName} (range: ${this.maxSearchDistance})...`);
 
         // 1. Identify block type
         const blocks = this.findBlocks(resourceName, count);
         if (blocks.length === 0) {
-            console.log(`[Gather] Could not find ${resourceName} nearby.`);
+            console.log(`[Gather] Could not find ${resourceName} within ${this.maxSearchDistance} blocks.`);
             return false;
         }
 
@@ -56,23 +58,24 @@ class GatherBehavior {
         if (!blockId && name === 'wood') {
             // Special case for any log
             const logs = [
-                this.mcData.blocksByName['oak_log'].id,
-                this.mcData.blocksByName['birch_log'].id,
-                this.mcData.blocksByName['spruce_log'].id,
-                this.mcData.blocksByName['jungle_log'].id,
-                this.mcData.blocksByName['acacia_log'].id,
-                this.mcData.blocksByName['dark_oak_log'].id
-            ];
+                this.mcData.blocksByName['oak_log']?.id,
+                this.mcData.blocksByName['birch_log']?.id,
+                this.mcData.blocksByName['spruce_log']?.id,
+                this.mcData.blocksByName['jungle_log']?.id,
+                this.mcData.blocksByName['acacia_log']?.id,
+                this.mcData.blocksByName['dark_oak_log']?.id
+            ].filter(Boolean); // Remove undefined entries
+
             return this.bot.findBlocks({
                 matching: logs,
-                maxDistance: 64,
+                maxDistance: this.maxSearchDistance,
                 count: count * 2
             });
         }
 
         return this.bot.findBlocks({
             matching: blockId,
-            maxDistance: 64,
+            maxDistance: this.maxSearchDistance,
             count: count
         });
     }

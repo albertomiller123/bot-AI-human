@@ -92,7 +92,8 @@ class BotCore {
         this.safeLoadPlugin(pathfinder, 'pathfinder');
         this.safeLoadPlugin(collectBlock, 'collectBlock');
         this.safeLoadPlugin(toolPlugin, 'toolPlugin');
-        // this.safeLoadPlugin(armorManager, 'armorManager'); // DISABLED: Crashing on item collect
+        // ArmorManager v2.0.1 fixed the playerCollect crash, now safe to load
+        this.safeLoadPlugin(armorManager, 'armorManager');
         // this.safeLoadPlugin(pvp, 'pvp');
 
         this.registerEvents();
@@ -131,7 +132,9 @@ class BotCore {
             // Start modules
             this.survivalSystem.start();
             this.chestTracker.start();
-            // this.idleBehavior.start(); // DISABLED: Causing invalid_entity_attacked kicks
+
+            // Start IdleBehavior with safety guards (now safe after fixes)
+            this.idleBehavior.start();
 
             // Initialize Vision System
             await this.visualCortex.init();

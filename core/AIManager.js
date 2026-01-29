@@ -5,35 +5,64 @@ class AIManager {
         this.botCore = botCore;
         this.config = null;
         this.client = null;
+        this.fallbackClient = null;
 
         this._init();
     }
 
     _init() {
         try {
-            // Load from centralized settings
-            const settings = require('../config/settings.json');
-            this.config = settings.ai;
+            // Priority: ENV > config file
+            const envBaseURL = process.env.AI_BASE_URL;
+            const envModelFast = process.env.AI_MODEL_FAST;
+            const envModelSlow = process.env.AI_MODEL_SLOW;
 
-            // Validate required config structure
-            if (!this.config?.fast?.model || !this.config?.slow?.model) {
-                throw new Error("Invalid AI config: missing fast.model or slow.model");
-            }
+            // Load from config file as fallback
+            const settings = require('../config/settings.json');
+            const fileConfig = settings.ai || {};
+
+            // Merge config: ENV takes priority
+            this.config = {
+                baseURL: envBaseURL || fileConfig.baseURL || "https://ai.megallm.io/v1",
+                fast: {
+                    model: envModelFast || fileConfig.fast?.model || "mistralai/mistral-nemotron",
+                    max_tokens: fileConfig.fast?.max_tokens || 200,
+                    temperature: fileConfig.fast?.temperature || 0.6
+                },
+                slow: {
+                    model: envModelSlow || fileConfig.slow?.model || "openai-gpt-oss-20b",
+                    max_tokens: fileConfig.slow?.max_tokens || 1000,
+                    temperature: fileConfig.slow?.temperature || 0.2
+                }
+            };
 
             // API Key availability check
             const apiKey = process.env.MEGALLM_API_KEY;
             if (!apiKey) {
                 console.warn("[AIManager] ⚠️ MEGALLM_API_KEY missing! AI features DISABLED.");
-                this.config = null; // Explicit disable
+                this.config = null;
                 return;
             }
 
             this.client = new OpenAI({
                 apiKey: apiKey,
-                baseURL: this.config.baseURL || "https://ai.megallm.io/v1"
+                baseURL: this.config.baseURL
             });
 
-            console.log(`[AIManager] ✅ Dual-Brain initialized. Fast: ${this.config.fast.model}, Slow: ${this.config.slow.model}`);
+            // Setup fallback client if configured
+            const fallbackURL = process.env.AI_FALLBACK_URL;
+            const fallbackKey = process.env.AI_FALLBACK_KEY;
+            if (fallbackURL && fallbackKey) {
+                this.fallbackClient = new OpenAI({
+                    apiKey: fallbackKey,
+                    baseURL: fallbackURL
+                });
+                console.log(`[AIManager] 🔄 Fallback API configured: ${fallbackURL.substring(0, 30)}...`);
+            }
+
+            console.log(`[AIManager] ✅ Dual-Brain initialized.`);
+            console.log(`[AIManager]    Base URL: ${this.config.baseURL}`);
+            console.log(`[AIManager]    Fast: ${this.config.fast.model}, Slow: ${this.config.slow.model}`);
         } catch (e) {
             console.error("[AIManager] ❌ CRITICAL: Failed to init AI:", e.message);
             console.error("[AIManager] AI features will be DISABLED!");
