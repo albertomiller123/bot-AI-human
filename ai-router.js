@@ -1,12 +1,8 @@
 const OpenAI = require('openai');
 
 class AIRouter {
-    constructor(apiKey, baseURL) {
-        this.client = new OpenAI({
-            apiKey: apiKey,
-            baseURL: baseURL
-        });
-        this.model = 'mistralai/mistral-nemotron'; // Quick Classification model
+    constructor(brain) {
+        this.brain = brain; // AIManager (Worker wrapper)
     }
 
     async classifyIntent(message, contextLite) {
@@ -30,19 +26,10 @@ Bot Context: ${JSON.stringify(contextLite)}
 Return ONLY a JSON object: {"intent": "INTENT_NAME", "reason": "brief reason"}`;
 
         try {
-            const response = await this.client.chat.completions.create({
-                model: this.model,
-                messages: [{ role: 'user', content: prompt }],
-                response_format: { type: 'json_object' }
-            });
-
-
-
-            const content = response.choices[0].message.content;
-            // Robust JSON extraction
-            let jsonString = content.match(/```json\s*([\s\S]*?)\s*```/)?.[1] || content;
-            const parsed = JSON.parse(jsonString.trim());
-            return parsed.intent;
+            // Use Fast Brain (Worker) with JSON Mode
+            const content = await this.brain.fast(prompt, true);
+            const parsed = JSON.parse(content || "{}");
+            return parsed.intent || 'CHATTING';
         } catch (error) {
             console.error("[AI Router] Classification failed:", error);
             return 'CHATTING'; // Default fallback

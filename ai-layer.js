@@ -22,17 +22,9 @@ class AILayer {
         this.brain = new AIManager(botCore);
 
         // CRITICAL FIX: Initialize Router and Reflex sub-agents
-        const apiKey = process.env.MEGALLM_API_KEY;
-        const baseURL = process.env.AI_BASE_URL || 'https://ai.megallm.io/v1';
-
-        if (apiKey) {
-            this.router = new AIRouter(apiKey, baseURL);
-            this.reflex = new AIReflex(apiKey, baseURL);
-        } else {
-            console.warn('[AILayer] MEGALLM_API_KEY not set! Router/Reflex disabled.');
-            this.router = null;
-            this.reflex = null;
-        }
+        // Initialize Router and Reflex sub-agents using the Brain (worker proxy)
+        this.router = new AIRouter(this.brain);
+        this.reflex = new AIReflex(this.brain);
 
         // Default timeout for API calls (ms)
         this.apiTimeout = 30000;

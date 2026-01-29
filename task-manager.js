@@ -221,8 +221,15 @@ class TaskManager {
         // logic moved to behaviors
 
         // 2. Check Behaviors (Tier 2 - Player Actions)
+        if (action === 'guardian_mode') {
+            const error = params.error || "Unknown Error";
+            await this.botCore.activateGuardianMode(error);
+            return { success: true };
+        }
+
         if (typeof this.botCore.behaviors[action] === 'function') {
             // Execute behavior and check standardized result
+            // Use call to ensure 'this' context if needed, though simpler is just explicit param mapping for criticals
             const result = await this.botCore.behaviors[action](...Object.values(params));
 
             // Behaviors now return { success, message, data } - validate result

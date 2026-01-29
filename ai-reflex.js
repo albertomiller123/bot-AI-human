@@ -1,15 +1,13 @@
 const OpenAI = require('openai');
 
 class AIReflex {
-    constructor(apiKey, baseURL) {
-        this.client = new OpenAI({
-            apiKey: apiKey,
-            baseURL: baseURL
-        });
-        this.model = 'mistralai/mistral-nemotron'; // Fast Chat/Action model
+    constructor(brain) {
+        this.brain = brain; // AIManager
         this.killCount = 0;
         this.recentDamage = 0;
     }
+
+    // ... (keep getToxicityLevel and getMoodPrompt unchanged) ...
 
     // Dynamic toxicity based on game state
     getToxicityLevel(contextLite) {
@@ -58,12 +56,10 @@ Player: "${message}"
 Reply (Vietnamese no accents, match current mood):`;
 
         try {
-            const response = await this.client.chat.completions.create({
-                model: this.model,
-                messages: [{ role: 'user', content: prompt }],
-                max_tokens: 100
-            });
-            return response.choices[0].message.content.trim().toLowerCase();
+            // Use Fast Brain (Worker) - No JSON Mode needed for chat, but fast model is fine
+            // Wait, we want raw text here.
+            const content = await this.brain.fast(prompt, false);
+            return content ? content.trim().toLowerCase() : (toxicity === 'panic' ? "LAG VCL" : "lag vcl");
         } catch (error) {
             console.error("[AI Reflex] Chat failed:", error);
             return toxicity === 'panic' ? "LAG VCL" : "lag vcl";
@@ -73,7 +69,7 @@ Reply (Vietnamese no accents, match current mood):`;
     async handleQuickCommand(contextLite, message, username) {
         const msg = message.toLowerCase();
 
-        // Manual Mapping for robustness (Vietnamese + English)
+        // Manual Mapping (Keep existing logic)
         if (msg.includes("stop") || msg.includes("ngừng") || msg.includes("dung lai")) {
             return { action: "stop_actions", params: {} };
         }
@@ -87,7 +83,7 @@ Reply (Vietnamese no accents, match current mood):`;
             return { action: "say_message", params: { message: "ok noi gi" } };
         }
 
-        // Fallback to fast model for other simple instructions
+        // Fallback to fast model (Worker)
         const prompt = `Convert this Minecraft command to a single-step JSON action: "${message}"
 Context: ${JSON.stringify(contextLite)}
 Sender: ${username}
@@ -102,14 +98,9 @@ Output ONLY valid JSON.
 Example: {"action": "name", "params": {}}`;
 
         try {
-            const response = await this.client.chat.completions.create({
-                model: this.model,
-                messages: [{ role: 'user', content: prompt }],
-                response_format: { type: 'json_object' }
-            });
-
-            const content = response.choices[0].message.content;
-            return JSON.parse(content);
+            // Use Fast Brain with JSON Mode
+            const content = await this.brain.fast(prompt, true);
+            return JSON.parse(content || "null");
         } catch (error) {
             return null;
         }
