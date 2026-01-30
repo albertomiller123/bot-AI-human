@@ -132,6 +132,28 @@ async function callAI(data) {
     }
 }
 
+async function getEmbedding(text) {
+    if (!client && !fallbackClient) {
+        return { error: "No AI Client initialized" };
+    }
+
+    // Simple text normalization
+    const cleanText = text.replace(/\n/g, " ");
+
+    try {
+        const useClient = client || fallbackClient;
+        const response = await useClient.embeddings.create({
+            model: config.embeddingModel || "text-embedding-3-small",
+            input: cleanText,
+            encoding_format: "float"
+        });
+        return { success: true, embedding: response.data[0].embedding };
+    } catch (e) {
+        console.error(`[AIWorker] Embedding failed: ${e.message}`);
+        return { success: false, error: e.message };
+    }
+}
+
 function handleAbort(id) {
     const controller = activeRequests.get(id);
     if (controller) {
@@ -159,6 +181,18 @@ if (parentPort) {
                     fallback: result.fallback
                 };
                 parentPort.postMessage({ type: 'result', result: safeResult });
+            } else if (message.type === 'embed') {
+                const embedResult = await getEmbedding(message.text);
+                // Ensure format matches _handleResult expectation
+                parentPort.postMessage({
+                    type: 'result',
+                    result: {
+                        id: message.id,
+                        success: embedResult.success,
+                        content: embedResult.embedding, // content logic
+                        error: embedResult.error
+                    }
+                });
             } else if (message.type === 'abort') {
                 handleAbort(message.id);
             }

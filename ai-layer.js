@@ -9,6 +9,7 @@ const AIManager = require('./core/AIManager');
 const AIRouter = require('./ai-router');
 const AIReflex = require('./ai-reflex');
 const ContextManager = require('./ContextManager');
+const AgentOrchestrator = require('./core/architecture/AgentOrchestrator');
 
 // FIX: Import helper functions to prevent ReferenceError
 const { getToolsForLLM, validateActionCall } = require('./action-registry');
@@ -26,8 +27,17 @@ class AILayer {
         this.router = new AIRouter(this.brain);
         this.reflex = new AIReflex(this.brain);
 
+        // Phase 2: Orchestrator
+        this.orchestrator = new AgentOrchestrator(botCore);
+
         // Default timeout for API calls (ms)
         this.apiTimeout = 30000;
+    }
+
+    async init() {
+        if (this.orchestrator) {
+            await this.orchestrator.init();
+        }
     }
 
     /**
@@ -68,7 +78,11 @@ class AILayer {
             case 'CHATTING':
             default:
                 const reply = await this.reflex.handleChat(contextLite, message);
-                this.botCore.say(reply);
+                if (this.botCore.humanizer) {
+                    await this.botCore.humanizer.say(reply);
+                } else {
+                    this.botCore.say(reply);
+                }
                 return null;
         }
     }
@@ -119,28 +133,31 @@ class AILayer {
         const contextFull = await this.contextManager.getFullContext(username);
         const visualContext = this.botCore.visualCortex?.getVisualContext() || { description: 'Vision unavailable' };
 
-        // Step 1: VisualPlanner generates high-level plan
-        const highLevelPlan = await this._visualPlannerThink(message, contextFull, visualContext);
-        if (!highLevelPlan || highLevelPlan.length === 0) {
+        // Phase 2: Agent Orchestrator (CEO + Manager + LTM)
+        try {
+            console.log(`[AILayer] Delegating to Orchestrator...`);
+            const result = await this.orchestrator.process(username, message, contextFull, visualContext);
+
+            if (result.type === 'strategy') {
+                return {
+                    type: 'strategy',
+                    complex_task: message,
+                    steps: result.steps
+                };
+            } else if (result.type === 'chat') {
+                if (this.botCore.humanizer) {
+                    await this.botCore.humanizer.say(result.content);
+                } else {
+                    this.botCore.say(result.content);
+                }
+                return null;
+            }
+        } catch (e) {
+            console.error("[AILayer] Orchestrator failed:", e);
             return null;
         }
 
-        console.log(`[AI Layer] High-level plan: ${highLevelPlan.length} steps`);
-
-        // Step 2: FastExecutor converts each step to JSON Action
-        const actionSteps = [];
-        for (const step of highLevelPlan) {
-            const action = await this._fastExecutorConvert(step);
-            if (action) {
-                actionSteps.push(action);
-            }
-        }
-
-        return {
-            type: 'strategy',
-            complex_task: message,
-            steps: actionSteps
-        };
+        return null;
     }
 
     /**
@@ -194,9 +211,11 @@ Examples:
 - "go chop wood" -> {"action": "mine_block", "params": {"type_name": "oak_log", "count": 10}}
 - "set gamemode" -> {"action": "say_message", "params": {"message": "I cannot change game mode, only server admin can."}}`;
 
+        let currentPrompt = prompt;
+
         for (let attempt = 0; attempt <= retries; attempt++) {
             // PHASE 12: Use System 1 (Fast Brain)
-            const content = await this.brain.fast(prompt, true);
+            const content = await this.brain.fast(currentPrompt, true);
             const action = this._parseJSON(content || "");
 
             if (action && action.action) {
@@ -206,18 +225,25 @@ Examples:
                     return action;
                 } else if (attempt < retries) {
                     console.log(`[FastExecutor] Validation failed, retry ${attempt + 1}: ${validation.error}`);
+                    currentPrompt += `\n\nPREVIOUS ATTEMPT FAILED. ERROR: "${validation.error}". FIX AND RETRY.`;
                     continue;
-                } else {
-                    // After all retries, fallback to guardian mode (Silent Guardian Protocol)
-                    console.log(`[FastExecutor] All retries failed, activating guardian mode`);
-                    return {
-                        action: "guardian_mode",
-                        params: {
-                            error: validation.error,
-                            original_step: step
-                        }
-                    };
                 }
+            } else if (attempt < retries) {
+                console.log(`[FastExecutor] JSON Parse failed, retry ${attempt + 1}`);
+                currentPrompt += `\n\nPREVIOUS OUTPUT WAS NOT VALID JSON. OUTPUT ONLY JSON.`;
+                continue;
+            }
+
+            // After all retries, fallback to guardian mode
+            if (attempt === retries) {
+                console.log(`[FastExecutor] All retries failed, activating guardian mode`);
+                return {
+                    action: "guardian_mode",
+                    params: {
+                        error: action ? "Validation Failed" : "JSON Parse Failed",
+                        original_step: step
+                    }
+                };
             }
         }
 

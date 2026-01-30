@@ -100,29 +100,13 @@ class ChatEngine {
     }
 
     async simulateTyping(text) {
-        // Simulate human typing
-        console.log(`[Chat] Typing: "${text}"`);
-
-        let currentText = "";
-        for (let i = 0; i < text.length; i++) {
-            // Delay
-            const speed = this.persona.typingSpeed + Math.random() * 50;
-            await new Promise(r => setTimeout(r, speed));
-
-            // Typo logic
-            if (Math.random() < this.persona.typoChance) {
-                const wrongChar = String.fromCharCode(text.charCodeAt(i) + 1); // Simple typo
-                currentText += wrongChar;
-                // Realize mistake, backspace
-                await new Promise(r => setTimeout(r, 300));
-                currentText = currentText.slice(0, -1);
-                await new Promise(r => setTimeout(r, 100));
-            }
-
-            currentText += text[i];
+        if (this.botCore.humanizer) {
+            await this.botCore.humanizer.say(text);
+        } else {
+            // Fallback
+            console.log(`[ChatEngine] Humanizer missing, using instant chat.`);
+            this.bot.chat(text);
         }
-
-        this.bot.chat(currentText);
     }
 }
 

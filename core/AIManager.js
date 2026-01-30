@@ -159,6 +159,26 @@ class AIManager extends EventEmitter {
         if (jsonMode) console.log("[AIManager] System 2 Thinking (Worker)...");
         return await this._sendRequest('slow', prompt, jsonMode);
     }
+
+    async embed(text) {
+        if (!this.worker) return null;
+        const id = ++this.requestIdCounter;
+
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                this.pendingRequests.delete(id);
+                reject(new Error("Embedding Timeout"));
+            }, 10000);
+
+            this.pendingRequests.set(id, {
+                resolve: resolve, // Content is the embedding array
+                reject,
+                timeout
+            });
+
+            this.worker.postMessage({ type: 'embed', id, text });
+        });
+    }
 }
 
 module.exports = AIManager;

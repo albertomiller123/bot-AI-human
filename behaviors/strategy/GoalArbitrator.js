@@ -15,6 +15,14 @@ class GoalArbitrator {
         // FIX: Health priority (100) > Food priority (95)
         // Bot phải hồi máu trước khi đi tìm thức ăn
         this.goals = [
+            // CRITICAL: Starvation/Emergency Foraging Logic
+            // If health is critical (< 10) AND we have NO food, we MUST forage immediately.
+            // Priority 101 overrides standard health (100)
+            {
+                id: 'critical_foraging',
+                priority: 101,
+                check: () => this.bot.health < 10 && this.countTotalFood() === 0
+            },
             { id: 'survival_health', priority: 100, check: () => this.needsHealth() },
             { id: 'survival_food', priority: 95, check: () => this.needsFood() },
             { id: 'progression_iron', priority: 50, check: () => this.needsIron() },

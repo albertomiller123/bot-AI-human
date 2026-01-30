@@ -43,7 +43,7 @@ class SurvivalSystem {
         this.isStrafing = false;
         this.isProcessingTick = false;
 
-        // Phase 1 Behaviors
+        // placeholderhaviors
         this.gatherer = new GatherBehavior(botCore);
         this.crafter = new CraftingManager(botCore);
         this.builder = new ShelterBuilder(botCore);
@@ -97,11 +97,21 @@ class SurvivalSystem {
         this.reflex = new ReflexManager(botCore);
 
         // Phase 17: Autonomous Systems
+        // Phase 17: Autonomous Systems
         const HealthMonitor = require('./core/HealthMonitor');
         const StuckDetector = require('./core/StuckDetector');
+        const TrashFilter = require('./inventory/TrashFilter');
+
+        // Phase 4: Advanced Skills
+        const PartyManager = require('./behaviors/social/PartyManager');
+        const VillagerTrader = require('./behaviors/economy/VillagerTrader');
 
         this.healthMonitor = new HealthMonitor(botCore);
         this.stuckDetector = new StuckDetector(botCore);
+        this.trash = new TrashFilter(botCore);
+
+        this.party = new PartyManager(botCore);
+        this.trader = new VillagerTrader(botCore);
     }
 
     start() {
@@ -111,6 +121,10 @@ class SurvivalSystem {
         // Start autonomous systems
         this.healthMonitor.start();
         this.stuckDetector.start();
+        if (this.fidger && this.fidger.start) this.fidger.start(); // Start Fidget
+
+        // Trash Filter Interval (Every 60s)
+        setInterval(() => this.trash.cleanInventory(), 60000);
 
         // Phase 7: PVP
         if (this.pvp) this.pvp.start();
@@ -180,17 +194,9 @@ class SurvivalSystem {
         const offhand = this.bot.inventory.slots[45];
         const cfg = this.config.survival;
 
-        // Auto-Totem / Shield logic
-        if (health < cfg.autoTotemHealth || (this.bot.combat && this.bot.combat.target)) {
-            const totem = this.bot.inventory.items().find(i => i.name === 'totem_of_undying');
-            const shield = this.bot.inventory.items().find(i => i.name === 'shield');
-
-            if (health < cfg.criticalHealth && totem && offhand?.name !== 'totem_of_undying') {
-                await this.bot.equip(totem, 'off-hand');
-            } else if (shield && offhand?.name !== 'shield' && offhand?.name !== 'totem_of_undying') {
-                await this.bot.equip(shield, 'off-hand');
-                this.bot.activateItem(true);
-            }
+        // Auto-Totem / Shield logic (Delegated to AdvancedPVP)
+        if (this.pvp) {
+            await this.pvp.autoTotem(cfg.autoTotemHealth, cfg.criticalHealth);
         }
     }
 
@@ -211,6 +217,10 @@ class SurvivalSystem {
 
     executeGoal(goalId) {
         switch (goalId) {
+            case 'critical_foraging':
+                console.log("[Survival] Critical Foraging Initiated (Starvation Mode)");
+                this.gatherer.findFood();
+                break;
             case 'survival_food':
                 this.gatherer.findFood();
                 break;

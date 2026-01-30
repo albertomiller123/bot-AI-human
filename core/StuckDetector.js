@@ -120,7 +120,6 @@ class StuckDetector {
             // Strategy 4: Random pathfind
             console.log("[StuckDetector] Trying random reposition...");
             await this.randomReposition();
-
         } catch (e) {
             console.warn("[StuckDetector] Recovery error:", e.message);
         } finally {
@@ -144,18 +143,24 @@ class StuckDetector {
             Math.cos(this.bot.entity.yaw) * -1
         ).floored();
 
-        const block = this.bot.blockAt(dir);
-        if (block && block.name !== 'air' && block.name !== 'bedrock') {
-            try {
-                await this.bot.dig(block);
-            } catch (e) {
-                // Try block at feet level instead
-                const blockFeet = this.bot.blockAt(dir.offset(0, -1, 0));
-                if (blockFeet && blockFeet.name !== 'air') {
-                    await this.bot.dig(blockFeet);
+        const tryDig = async (pos) => {
+            const block = this.bot.blockAt(pos);
+            if (block && block.name !== 'air' && block.name !== 'bedrock') {
+                if (this.bot.canDigBlock(block)) {
+                    try {
+                        await this.bot.dig(block, true);
+                        return true;
+                    } catch (e) { return false; }
+                } else {
+                    console.log(`[StuckDetector] Cannot dig ${block.name} (Protected/Unbreakable)`);
                 }
             }
-        }
+            return false;
+        };
+
+        if (await tryDig(dir)) return;
+        // Try feet level
+        await tryDig(dir.offset(0, -1, 0));
     }
 
     async randomReposition() {

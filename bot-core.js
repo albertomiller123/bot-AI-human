@@ -149,6 +149,11 @@ class BotCore {
             // Initialize Vision System
             await this.visualCortex.init();
 
+            // Phase 2: Initialize Agent Orchestrator (Cognitive Architecture)
+            if (this.aiLayer && this.aiLayer.init) {
+                await this.aiLayer.init();
+            }
+
             // Initialize Prismarine Viewer
             if (this.config.plugins && this.config.plugins.viewer && this.config.plugins.viewer.enabled) {
                 const viewerPort = this.config.plugins.viewer.port || 3007;

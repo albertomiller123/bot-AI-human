@@ -170,6 +170,30 @@ class AdvancedPVP {
         if (sword) await this.bot.equip(sword, 'hand');
         else if (axe) await this.bot.equip(axe, 'hand');
     }
+    async autoTotem(healthThreshold = 8, criticalHealth = 6) {
+        if (!this.bot || !this.bot.inventory) return;
+
+        const health = this.bot.health;
+        const offhand = this.bot.inventory.slots[45];
+        const totem = this.bot.inventory.items().find(i => i.name === 'totem_of_undying');
+        const shield = this.bot.inventory.items().find(i => i.name === 'shield');
+
+        // Priority 1: Critical Health -> Force Totem
+        if (health < criticalHealth && totem) {
+            if (offhand?.name !== 'totem_of_undying') {
+                console.log("[PVP] 🚨 CRITICAL HEALTH! Swapping to Totem!");
+                await this.bot.equip(totem, 'off-hand');
+            }
+            return;
+        }
+
+        // Priority 2: Shield if healthy (checking cooldown)
+        if (health > healthThreshold && shield && offhand?.name !== 'shield') {
+            if (Date.now() > this.shieldDisabledUntil) {
+                await this.bot.equip(shield, 'off-hand');
+            }
+        }
+    }
 }
 
 module.exports = AdvancedPVP;
