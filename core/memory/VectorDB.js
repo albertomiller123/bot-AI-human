@@ -1,87 +1,124 @@
-const sqlite3 = require('sqlite3').verbose();
+const fs = require('fs');
+const path = require('path');
 
 class VectorDB {
-    constructor(memoryManager, aiManager) {
-        this.memory = memoryManager;
-        this.ai = aiManager;
-        this.tableName = 'memory_vectors';
+    constructor(botCore) {
+        this.botCore = botCore;
+        // Persistence path
+        this.dbPath = path.join(__dirname, '../../data/memory_vector.json');
+        this.vectors = []; // Valid RAM Cache
+
+        // Local model pipeline
+        this.embeddingPipeline = null;
+
+        this.load();
     }
 
+    /**
+     * Init AI Model (Lazy Load)
+     */
     async init() {
-        // Ensure table exists
-        await this.memory._runWithRetry(`
-            CREATE TABLE IF NOT EXISTS ${this.tableName} (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                text TEXT,
-                embedding TEXT, -- JSON string of float array
-                metadata TEXT,  -- JSON object
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-        console.log("[VectorDB] Initialized vector table.");
+        if (!this.embeddingPipeline) {
+            console.log("[VectorDB] ⏳ Loading Local Embedding Model (first run may be slow)...");
+            // Dynamic import
+            const { pipeline } = await import('@xenova/transformers');
+
+            // Use 'all-MiniLM-L6-v2' (Small, Fast, Good for RAG)
+            this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+            console.log("[VectorDB] ✅ AI Model Ready!");
+        }
     }
 
+    /**
+     * Create embedding from text (Local CPU)
+     */
+    async createEmbedding(text) {
+        if (!text || text.trim().length === 0) return null;
+
+        try {
+            await this.init(); // Ensure model loaded
+
+            // Run model
+            const output = await this.embeddingPipeline(text, { pooling: 'mean', normalize: true });
+
+            // Convert Tensor to Array
+            return Array.from(output.data);
+        } catch (e) {
+            console.error("[VectorDB] ❌ Embedding Error:", e.message);
+            return null;
+        }
+    }
+
+    /**
+     * Add new memory
+     */
     async add(text, metadata = {}) {
-        if (!text || !text.trim()) return;
+        const embedding = await this.createEmbedding(text);
+        if (!embedding) return;
 
-        try {
-            const embedding = await this.ai.embed(text);
-            if (!embedding) throw new Error("Failed to generate embedding");
+        const entry = {
+            id: Date.now() + Math.random().toString(36).substr(2, 9),
+            text: text,
+            vector: embedding,
+            metadata: metadata,
+            timestamp: new Date().toISOString()
+        };
 
-            await this.memory._runWithRetry(
-                `INSERT INTO ${this.tableName} (text, embedding, metadata) VALUES (?, ?, ?)`,
-                [text, JSON.stringify(embedding), JSON.stringify(metadata)]
-            );
-            console.log(`[VectorDB] Added memory: "${text.substring(0, 30)}..."`);
-        } catch (e) {
-            console.error(`[VectorDB] Add failed: ${e.message}`);
-        }
+        this.vectors.push(entry);
+        this.save();
+        console.log(`[VectorDB] 🧠 Remembered: "${text.substring(0, 30)}..."`);
     }
 
-    async search(query, limit = 5) {
-        try {
-            const queryEmbedding = await this.ai.embed(query);
-            if (!queryEmbedding) return [];
+    /**
+     * Search relevant memories
+     */
+    async search(query, limit = 3) {
+        const queryVector = await this.createEmbedding(query);
+        if (!queryVector) return [];
 
-            // Fetch all embeddings (Naive scan, fine for small scale < 5000)
-            const rows = await this.memory._allWithRetry(`SELECT id, text, embedding, metadata, timestamp FROM ${this.tableName}`);
+        // Cosine Similarity
+        const results = this.vectors.map(entry => {
+            const score = this.cosineSimilarity(queryVector, entry.vector);
+            return { ...entry, score };
+        });
 
-            const results = rows.map(row => {
-                const vec = JSON.parse(row.embedding);
-                const score = this._cosineSimilarity(queryEmbedding, vec);
-                return {
-                    text: row.text,
-                    metadata: JSON.parse(row.metadata || '{}'),
-                    score: score,
-                    timestamp: row.timestamp
-                };
-            });
-
-            // Sort by score desc and take top K
-            return results
-                .sort((a, b) => b.score - a.score)
-                .slice(0, limit);
-
-        } catch (e) {
-            console.error(`[VectorDB] Search failed: ${e.message}`);
-            return [];
-        }
+        // Rank & Filter
+        return results
+            .sort((a, b) => b.score - a.score)
+            .filter(item => item.score > 0.3) // Threshold 30%
+            .slice(0, limit)
+            .map(item => ({ text: item.text, score: item.score, metadata: item.metadata }));
     }
 
-    _cosineSimilarity(vecA, vecB) {
-        if (!vecA || !vecB || vecA.length !== vecB.length) return 0;
-
-        let dot = 0;
+    cosineSimilarity(vecA, vecB) {
+        let dotProduct = 0;
         let normA = 0;
         let normB = 0;
-
         for (let i = 0; i < vecA.length; i++) {
-            dot += vecA[i] * vecB[i];
+            dotProduct += vecA[i] * vecB[i];
             normA += vecA[i] * vecA[i];
             normB += vecB[i] * vecB[i];
         }
+        return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    }
 
-        return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+    save() {
+        const dir = path.dirname(this.dbPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+        fs.writeFileSync(this.dbPath, JSON.stringify(this.vectors, null, 2));
+    }
+
+    load() {
+        try {
+            if (fs.existsSync(this.dbPath)) {
+                this.vectors = JSON.parse(fs.readFileSync(this.dbPath, 'utf8'));
+                console.log(`[VectorDB] Loaded ${this.vectors.length} memories.`);
+            }
+        } catch (e) {
+            console.error("[VectorDB] Load Error:", e);
+            this.vectors = [];
+        }
     }
 }
 

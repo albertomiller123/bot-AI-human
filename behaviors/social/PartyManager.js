@@ -91,6 +91,34 @@ class PartyManager {
             // Or use 'entityHurt' event to see if leader caused damage
         }, 500);
     }
+
+    async handleRequest(username, message) {
+        if (!this.isMember(username)) return;
+
+        // Simple Economy: "I need [item]" or "give me [item]"
+        if (message.includes("need") || message.includes("give")) {
+            const words = message.split(" ");
+            const itemWord = words[words.length - 1]; // Assume last word is item name
+
+            // Fuzzy match item in inventory
+            const item = this.bot.inventory.items().find(i => i.name.includes(itemWord));
+            if (item) {
+                this.bot.chat(`Here is some ${item.name} for you, ${username}.`);
+                await this.dropItem(item, username);
+            } else {
+                this.bot.chat(`Sorry, I don't have any ${itemWord}.`);
+            }
+        }
+    }
+
+    async dropItem(item, targetUsername) {
+        // Look at target player
+        const target = this.bot.players[targetUsername]?.entity;
+        if (target) {
+            await this.bot.lookAt(target.position.offset(0, 1.6, 0));
+        }
+        await this.bot.tossStack(item);
+    }
 }
 
 module.exports = PartyManager;

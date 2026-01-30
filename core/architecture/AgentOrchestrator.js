@@ -63,6 +63,34 @@ class AgentOrchestrator {
 
         return { type: 'strategy', steps: actions };
     }
+
+    async gatherPerception() {
+        // Optimize Context: Limit Entities and Compress Inventory
+
+        const entities = Object.values(this.bot.entities)
+            .filter(e => e.type === 'mob' || e.type === 'player')
+            .filter(e => e.position.distanceTo(this.bot.entity.position) < 16)
+            .sort((a, b) => a.position.distanceTo(this.bot.entity.position) - b.position.distanceTo(this.bot.entity.position))
+            .slice(0, 10) // Limit to top 10 nearest
+            .map(e => `${e.username || e.name} (${Math.round(e.position.distanceTo(this.bot.entity.position))}m)`);
+
+        // Compress Inventory
+        const inventory = {};
+        this.bot.inventory.items().forEach(item => {
+            inventory[item.name] = (inventory[item.name] || 0) + item.count;
+        });
+
+        return {
+            nearbyEntities: entities,
+            self: {
+                health: Math.round(this.bot.health),
+                food: Math.round(this.bot.food),
+                position: this.bot.entity.position.floored(),
+                inventory: inventory // Compressed format
+            },
+            time: this.bot.time.timeOfDay
+        };
+    }
 }
 
 module.exports = AgentOrchestrator;

@@ -23,7 +23,7 @@ class GoalArbitrator {
                 priority: 101,
                 check: () => this.bot.health < 10 && this.countTotalFood() === 0
             },
-            { id: 'survival_health', priority: 100, check: () => this.needsHealth() },
+            { id: 'survival_health', priority: 100, check: () => this.needsHealth() && this.hasFood() },
             { id: 'survival_food', priority: 95, check: () => this.needsFood() },
             { id: 'progression_iron', priority: 50, check: () => this.needsIron() },
             { id: 'progression_diamond', priority: 40, check: () => this.needsDiamond() },
@@ -125,6 +125,11 @@ class GoalArbitrator {
 
     hasItem(name) {
         return this.bot.inventory.items().some(i => i.name.includes(name));
+    }
+    hasFood() {
+        // Check if we have any food from the acceptable list
+        const food = this.bot.inventory.items().filter(item => ACCEPTABLE_FOODS.includes(item.name));
+        return food.length > 0;
     }
 }
 

@@ -61,7 +61,7 @@ class TrashFilter {
                         await this.bot.tossStack(item);
                         console.log(`[TrashFilter] Tossed ${item.name} x${item.count}`);
                         counts[item.name] -= item.count;
-                        await new Promise(r => setTimeout(r, 500)); // Delay
+                        await new Promise(r => setTimeout(r, 600)); // Delay to prevent server spam kick
                     } catch (e) {
                         console.error(`[TrashFilter] Failed to toss ${item.name}:`, e.message);
                     }

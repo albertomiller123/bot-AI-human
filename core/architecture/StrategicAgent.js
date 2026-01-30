@@ -1,9 +1,24 @@
 class StrategicAgent {
     constructor(ai) {
         this.ai = ai; // AIManager
+        this.failureCount = 0;
+        this.lastGoal = "";
     }
 
     async think(context, visualContext, goal) {
+        // Reflection Logic
+        let errorContext = "";
+        if (goal === this.lastGoal) {
+            this.failureCount++;
+            if (this.failureCount > 0) {
+                errorContext = `\nWARNING: The previous plan for this goal FAILED (Attempt ${this.failureCount}). YOU MUST CHANGE STRATEGY. Do not repeat the same steps.`;
+            }
+        } else {
+            this.failureCount = 0;
+            this.lastGoal = goal;
+        }
+
+        // Use PromptBuilder logic manually for now (since we don't import it here yet)
         const prompt = `You are a Minecraft Strategic AI (CEO). 
         
 GOAL: "${goal}"
@@ -12,9 +27,9 @@ CURRENT SITUATION:
 - Health: ${context.health}/20
 - Food: ${context.food}/20
 - Position: ${JSON.stringify(context.position)}
-- Inventory: ${context.inventory}
+- Inventory: ${JSON.stringify(context.inventory)}
 - Visual: ${visualContext.description}
-- Looking At: ${JSON.stringify(visualContext.lookingAt)}
+${errorContext}
 
 Analyze the situation and create a high-level plan (3-5 steps).
 Each step should be actionable but not too low-level.

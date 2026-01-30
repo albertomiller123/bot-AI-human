@@ -1,15 +1,49 @@
+const fs = require('fs');
+const path = require('path');
 const { getToolsForLLM, validateActionCall } = require('../../action-registry');
 
 class TacticalAgent {
     constructor(ai) {
-        this.ai = ai; // AIManager
+        this.ai = ai;
+        this.taskQueue = [];
+        this.statePath = path.join(__dirname, '../../data/brain_state.json');
+        this.loadState();
+    }
+
+    loadState() {
+        try {
+            if (fs.existsSync(this.statePath)) {
+                const data = fs.readFileSync(this.statePath, 'utf8');
+                const state = JSON.parse(data);
+                this.taskQueue = state.taskQueue || [];
+                console.log(`[Tactical] Restored ${this.taskQueue.length} pending tasks.`);
+            }
+        } catch (e) {
+            console.error("[Tactical] Failed to load state:", e.message);
+        }
+    }
+
+    saveState() {
+        try {
+            const dir = path.dirname(this.statePath);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+            const state = { taskQueue: this.taskQueue, timestamp: Date.now() };
+            fs.writeFileSync(this.statePath, JSON.stringify(state, null, 2));
+        } catch (e) {
+            console.error("[Tactical] Failed to save state:", e.message);
+        }
     }
 
     async planExecution(instruction, context) {
+        // Enqueue new task
+        this.taskQueue.push({ step: instruction, status: 'pending' });
+        this.saveState();
+
         const tools = getToolsForLLM();
         const toolNames = tools.map(t => t.function.name).join(', ');
 
-        let currentPrompt = `You are a Minecraft Tactical AI (Manager).
+        const prompt = `You are a Minecraft Tactical AI (Manager).
         
 INSTRUCTION: "${instruction}"
 
@@ -20,26 +54,25 @@ Convert the instruction into a SPECIFIC JSON ACTION.
 Output format: {"action": "name", "params": {...}}
 `;
 
-        // Retry logic handled here or in Orchestrator?
-        // Let's implement simple retry here
-        for (let i = 0; i < 3; i++) {
-            try {
-                const response = await this.ai.fast(currentPrompt, true); // System 1
-                const action = this._parseJSON(response);
+        try {
+            // Task complete (Assume success for now)
+            // In a real loop, we would clear this AFTER action execution validation
+            this.taskQueue.shift();
+            this.saveState();
 
-                if (action && action.action) {
-                    const validation = validateActionCall(action.action, action.params || {});
-                    if (validation.valid) return action;
+            const response = await this.ai.fast(prompt, true);
+            const action = this._parseJSON(response);
 
-                    console.warn(`[TacticalAgent] Validation failed: ${validation.error}`);
-                    currentPrompt += `\nERROR: ${validation.error}. Fix it.`;
-                }
-            } catch (e) {
-                console.error(`[TacticalAgent] Attempt ${i + 1} failed:`, e);
+            if (action && action.action) {
+                const validation = validateActionCall(action.action, action.params || {});
+                if (validation.valid) return action;
+                console.warn(`[Tactical] Validation failed: ${validation.error}`);
             }
+            return null;
+        } catch (e) {
+            console.error("[Tactical] Error:", e);
+            return null;
         }
-
-        return null; // Failed
     }
 
     _parseJSON(content) {
