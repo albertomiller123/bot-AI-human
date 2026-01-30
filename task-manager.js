@@ -249,6 +249,25 @@ class TaskManager {
             return;
         }
 
+        // 4. Auto-Map Snake_Case -> camelCase (Fallback)
+        const toCamelCase = (str) => str.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
+        const camelAction = toCamelCase(action);
+
+        if (this.botCore.behaviors && typeof this.botCore.behaviors[camelAction] === 'function') {
+            console.log(`[TaskManager] Auto-mapped '${action}' -> '${camelAction}' (Behavior)`);
+            const result = await this.botCore.behaviors[camelAction](...Object.values(params));
+            if (result && typeof result === 'object' && 'success' in result && !result.success) {
+                throw new Error(result.message || `Behavior ${camelAction} failed`);
+            }
+            return;
+        }
+
+        if (this.botCore.primitives && typeof this.botCore.primitives[camelAction] === 'function') {
+            console.log(`[TaskManager] Auto-mapped '${action}' -> '${camelAction}' (Primitive)`);
+            await this.botCore.primitives[camelAction](...Object.values(params));
+            return;
+        }
+
         throw new Error(`Unknown action: ${action} (Check action-registry.js vs code logic)`);
     }
 
@@ -262,8 +281,8 @@ class TaskManager {
             let stopConditionMet = false;
 
             if (action === 'attack_target') {
-                const currentTarget = bot.pvp.target;
-                if (!currentTarget || currentTarget.health === 0 || !currentTarget.isValid) {
+                const currentTarget = bot.pvp?.target;
+                if (!bot.pvp || !currentTarget || currentTarget.health === 0 || !currentTarget.isValid) {
                     console.log("[TaskManager] Mục tiêu đã bị tiêu diệt hoặc biến mất.");
                     stopConditionMet = true;
                 }
