@@ -18,6 +18,20 @@ class StripMiner {
         ];
     }
 
+    async dumpTrash() {
+        const items = this.bot.inventory.items();
+        for (const item of items) {
+            if (this.trashBlocks.includes(item.name)) {
+                try {
+                    await this.bot.tossStack(item);
+                    await new Promise(r => setTimeout(r, 600)); // Delay to prevent spam kick
+                } catch (e) {
+                    console.log(`[Mining] Failed to toss ${item.name}:`, e.message);
+                }
+            }
+        }
+    }
+
     async startStripMining() {
         const TARGET_Y = -58;
         console.log("[Mining] Starting Strip Mine operation...");

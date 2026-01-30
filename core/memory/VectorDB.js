@@ -10,24 +10,33 @@ class VectorDB {
 
         // Local model pipeline
         this.embeddingPipeline = null;
+        this.loadingPromise = null;
 
         this.saveTimer = null;
         this.load();
     }
 
     /**
-     * Init AI Model (Lazy Load)
+     * Init AI Model (Lazy Load with Race Condition Safety)
      */
     async init() {
-        if (!this.embeddingPipeline) {
-            console.log("[VectorDB] ⏳ Loading Local Embedding Model (first run may be slow)...");
-            // Dynamic import
-            const { pipeline } = await import('@xenova/transformers');
+        if (this.embeddingPipeline) return; // Already loaded
 
-            // Use 'all-MiniLM-L6-v2' (Small, Fast, Good for RAG)
+        // Check if loading is in progress
+        if (this.loadingPromise) {
+            await this.loadingPromise;
+            return;
+        }
+
+        console.log("[VectorDB] ⏳ Loading Local Embedding Model...");
+        this.loadingPromise = (async () => {
+            const { pipeline } = await import('@xenova/transformers');
             this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
             console.log("[VectorDB] ✅ AI Model Ready!");
-        }
+        })();
+
+        await this.loadingPromise;
+        this.loadingPromise = null;
     }
 
     /**
@@ -109,6 +118,14 @@ class VectorDB {
 
         this.saveTimer = setTimeout(() => {
             try {
+                // Pruning: Keep only last 1000 memories
+                if (this.vectors.length > 1000) {
+                    // Sort by timestamp (newest last) - assumed push order
+                    // Just slice the end
+                    this.vectors = this.vectors.slice(this.vectors.length - 1000);
+                    console.log("[VectorDB] ✂️ Pruned old memories. Count:", this.vectors.length);
+                }
+
                 const dir = path.dirname(this.dbPath);
                 if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 

@@ -21,7 +21,7 @@ class AgentOrchestrator {
     async init() {
         if (!this.botCore.memoryManager) throw new Error("MemoryManager not ready");
 
-        this.ltm = new VectorDB(this.botCore.memoryManager, this.ai);
+        this.ltm = new VectorDB(this.botCore);
         await this.ltm.init();
         console.log("[AgentOrchestrator] Cognitive Architecture Ready");
     }
