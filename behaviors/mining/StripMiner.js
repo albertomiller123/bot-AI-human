@@ -19,97 +19,113 @@ class StripMiner {
     }
 
     async startStripMining() {
-        const TARGET_Y = -58; // Deepslate Diamond Level
+        const TARGET_Y = -58;
         console.log("[Mining] Starting Strip Mine operation...");
 
-        // 1. Dig down to target level (if needed)
-        if (this.bot.entity.position.y > TARGET_Y) {
-            console.log(`[Mining] Digging down from Y=${Math.floor(this.bot.entity.position.y)} to ${TARGET_Y}`);
-            try {
-                const goal = new goals.GoalY(TARGET_Y);
-                await this.bot.pathfinder.goto(goal);
-            } catch (e) {
-                console.log("[Mining] Failed to reach target depth:", e.message);
-                return;
+        // Disable Stuck Detector during mining to avoid conflicts
+        if (this.botCore.stuckDetector) this.botCore.stuckDetector.stop();
+
+        try {
+            // 1. Dig down to target level
+            if (this.bot.entity.position.y > TARGET_Y) {
+                console.log(`[Mining] Digging down to ${TARGET_Y}`);
+                await this.digDown(TARGET_Y);
             }
-        }
 
-        // 2. Start Branch Mining
-        console.log("[Mining] At target depth. Starting branch mining.");
-        const startPos = this.bot.entity.position.clone();
+            // 2. Branch Mining
+            console.log("[Mining] Starting tunnel...");
+            const direction = { x: 1, z: 0 };
+            // Better direction deduction based on yaw could go here
 
-        // Calculate direction based on yaw (simplified: just go +X)
-        const direction = { x: 1, z: 0 };
-
-        for (let i = 0; i < 50; i++) { // Mine 50 blocks forward
-            // FIX 1: Check inventory and dump trash BEFORE mining
-            if (this.bot.inventory.emptySlotCount() < 3) {
-                console.log("[Mining] Inventory nearly full. Dumping trash...");
-                await this.dumpTrash();
-
-                // If still full after dumping, stop mining
+            for (let i = 0; i < 50; i++) {
                 if (this.bot.inventory.emptySlotCount() < 2) {
-                    console.log("[Mining] Inventory still full with valuables. Returning to base.");
-                    return;
-                }
-            }
-
-            // FIX 2: Use AWAIT with pathfinder.goto() - sequential, not instant spam
-            try {
-                const nextX = Math.floor(startPos.x) + (i * direction.x);
-                const nextZ = Math.floor(startPos.z) + (i * direction.z);
-                const y = Math.floor(startPos.y);
-
-                // Go to next position
-                const goal = new goals.GoalBlock(nextX, y, nextZ);
-                await this.bot.pathfinder.goto(goal);
-
-                // Dig ceiling block to make 2-high tunnel
-                const ceilingPos = this.bot.entity.position.offset(0, 2, 0);
-                const ceilingBlock = this.bot.blockAt(ceilingPos);
-                if (ceilingBlock && ceilingBlock.name !== 'air' && ceilingBlock.name !== 'cave_air') {
-                    await this.bot.dig(ceilingBlock);
+                    await this.dumpTrash();
+                    if (this.bot.inventory.emptySlotCount() < 2) {
+                        console.log("[Mining] Inventory full. Stopping.");
+                        break;
+                    }
                 }
 
-                // Small delay to prevent overwhelming the server
-                await new Promise(r => setTimeout(r, 100));
+                // Dig the tunnel (2 blocks high)
+                const currentPos = this.bot.entity.position.floored();
+                const targetFeet = currentPos.offset(direction.x, 0, direction.z);
+                const targetHead = currentPos.offset(direction.x, 1, direction.z);
 
-            } catch (e) {
-                console.log("[Mining] Segment blocked or finished:", e.message);
-                break;
+                if (!await this.safeDig(targetHead) || !await this.safeDig(targetFeet)) {
+                    console.log("[Mining] Barrier or Liquid detected. Stopping tunnel.");
+                    break;
+                }
+
+                // Move forward manually
+                await this.bot.lookAt(targetHead);
+                this.bot.setControlState('forward', true);
+
+                // Wait until we reach the block center
+                const reached = await this.waitForMove(targetFeet);
+                this.bot.setControlState('forward', false);
+
+                if (!reached) {
+                    console.log("[Mining] Movement blocked.");
+                    break;
+                }
             }
+        } catch (e) {
+            console.error("[Mining] Error:", e);
+        } finally {
+            // Re-enable Stuck Detector
+            if (this.botCore.stuckDetector) this.botCore.stuckDetector.start();
+            console.log("[Mining] Session complete.");
         }
-
-        console.log("[Mining] Strip mining session complete.");
     }
 
-    /**
-     * Dump trash blocks (cobblestone, dirt, gravel, etc.)
-     */
-    async dumpTrash() {
-        const items = this.bot.inventory.items();
+    async safeDig(pos) {
+        const block = this.bot.blockAt(pos);
+        if (!block || block.name === 'air') return true;
+        if (block.name === 'bedrock') return false;
 
-        for (const item of items) {
-            const isTrash = this.trashBlocks.some(trash => item.name.includes(trash));
-            if (isTrash) {
-                try {
-                    await this.bot.tossStack(item);
-                    // Delay between tosses to prevent packet spam
-                    await new Promise(r => setTimeout(r, 300));
-                } catch (e) {
-                    // Ignore toss errors
-                }
+        // Check for liquids (Naive check: if block is already liquid)
+        if (block.name === 'lava' || block.name === 'water') return false;
+
+        try {
+            await this.bot.dig(block);
+
+            // Post-dig Safety Check: Did lava flow in?
+            await new Promise(r => setTimeout(r, 200)); // Wait for physics
+            const afterBlock = this.bot.blockAt(pos);
+            if (afterBlock && (afterBlock.name.includes('lava') || afterBlock.name.includes('water'))) {
+                console.log("[Mining] 🚨 LIQUID BREACH! Backing off!");
+                // Optional: Place block back if possible
+                return false;
             }
+            return true;
+        } catch (e) {
+            console.log("[Mining] Dig failed:", e.message);
+            return false;
         }
+    }
 
-        console.log(`[Mining] Trash dumped. Empty slots: ${this.bot.inventory.emptySlotCount()}`);
+    async waitForMove(targetPos) {
+        return new Promise(resolve => {
+            const check = setInterval(() => {
+                const dist = this.bot.entity.position.distanceTo(targetPos.offset(0.5, 0, 0.5));
+                if (dist < 0.5) {
+                    clearInterval(check);
+                    resolve(true);
+                }
+            }, 50);
+
+            // Timeout 2s
+            setTimeout(() => {
+                clearInterval(check);
+                resolve(false);
+            }, 2000);
+        });
     }
 
     async digDown(targetY) {
         // Staircase logic for safe descent
         console.log("[Mining] Using pathfinder to descend safely.");
         try {
-            const current = this.bot.entity.position;
             const goal = new goals.GoalY(targetY);
             await this.bot.pathfinder.goto(goal);
         } catch (err) {

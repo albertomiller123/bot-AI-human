@@ -53,7 +53,11 @@ class AdvancedPVP {
             // This syncs with server ticks instead of real-time ms
             this.waitForFall().then(() => {
                 this.bot.setControlState('jump', false);
-                this._performAttack(target, dist);
+                // Race Condition Check: Ensure target still exists and is close
+                if (target && target.isValid) {
+                    const newDist = this.bot.entity.position.distanceTo(target.position);
+                    this._performAttack(target, newDist);
+                }
             });
             return;
         }

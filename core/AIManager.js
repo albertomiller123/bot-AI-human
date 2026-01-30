@@ -121,9 +121,15 @@ class AIManager extends EventEmitter {
     }
 
     _sanitizePayload(obj) {
+        const seen = new WeakSet();
         return JSON.parse(JSON.stringify(obj, (key, value) => {
-            // Remove huge objects or circular refs if necessary
-            if (key === 'bot' || key === 'botCore') return undefined; // Should not happen in prompt/jsonMode, but safe to filter
+            if (typeof value === 'object' && value !== null) {
+                if (key === 'bot' || key === 'botCore') return undefined; // Explicitly drop massive objects
+                if (seen.has(value)) {
+                    return '[Circular]';
+                }
+                seen.add(value);
+            }
             return value;
         }));
     }

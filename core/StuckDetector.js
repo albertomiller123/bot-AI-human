@@ -35,6 +35,9 @@ class StuckDetector {
         if (!this.bot || !this.botCore.isInitialized) return;
         if (this.isUnsticking) return;
 
+        // FIX: Do not trigger stuck detection while mining (digging takes time)
+        if (this.bot.targetDigBlock) return;
+
         // Only check if bot is supposed to be moving
         const isMoving = this.bot.pathfinder?.goal !== null ||
             this.bot.controlState.forward ||

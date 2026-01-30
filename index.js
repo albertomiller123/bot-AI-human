@@ -31,8 +31,9 @@ process.on('uncaughtException', (error) => {
         return; // Don't exit
     }
 
-    // For critical errors, exit with code 1 - PM2 will restart
-    process.exit(1);
+    // For critical errors, wait 5s then exit (allows reading logs if manual run)
+    console.error("[System] Critical Error - Exiting in 5s...");
+    setTimeout(() => process.exit(1), 5000);
 });
 
 // Graceful shutdown
@@ -85,8 +86,15 @@ try {
     config = JSON.parse(configFile);
     console.log("✅ Config loaded successfully.");
 } catch (error) {
-    console.error("❌ Error: Cannot read config.json!", error.message);
-    process.exit(1);
+    console.error("❌ Error: Cannot read config.json! Using DEFAULT fallback.", error.message);
+    // Minimal fallback to allow start (will likely fail auth, but won't crash process immediately)
+    config = {
+        auth: "offline",
+        username: "FallbackBot",
+        host: "localhost",
+        port: 25565
+    };
+    // Don't exit, try to run
 }
 
 // Start Bot

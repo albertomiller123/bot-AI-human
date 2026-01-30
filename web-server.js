@@ -16,7 +16,11 @@ class WebServer {
 
         // === SECURITY: API Authentication Middleware ===
         // === SECURITY: API Authentication Middleware ===
-        const AUTH_TOKEN = process.env.WEB_ADMIN_TOKEN || "admin123";
+        const AUTH_TOKEN = process.env.WEB_ADMIN_TOKEN;
+        if (!AUTH_TOKEN) {
+            console.error("❌ CRITICAL: WEB_ADMIN_TOKEN not set in .env! Web Server disabled for security.");
+            return; // Disable middleware/routes setup (effectively disables web access)
+        }
 
         this.app.use('/api', (req, res, next) => {
             // Skip auth for GET requests (status check) if no secret configured
@@ -94,6 +98,11 @@ class WebServer {
                 const requiresBot = ['move_forward', 'move_back', 'move_left', 'move_right', 'jump', 'attack_nearest'];
                 if (requiresBot.includes(command) && !bot) {
                     return res.status(503).json({ error: "Bot not connected to server" });
+                }
+
+                // Prevent conflict with AI Task Manager
+                if (this.botCore.actionLock && !this.botCore.actionLock.tryAcquire('web-user', 3000)) {
+                    return res.status(409).json({ error: "Bot is busy (Locked by AI/Game Task)" });
                 }
 
                 switch (command) {
