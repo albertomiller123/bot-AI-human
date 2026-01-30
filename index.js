@@ -89,10 +89,16 @@ try {
     console.error("❌ Error: Cannot read config.json! Using DEFAULT fallback.", error.message);
     // Minimal fallback to allow start (will likely fail auth, but won't crash process immediately)
     config = {
-        auth: "offline",
-        username: "FallbackBot",
-        host: "localhost",
-        port: 25565
+        bot: {
+            auth: "offline",
+            username: "FallbackBot",
+            host: "localhost",
+            port: 25565,
+            version: "1.20.4"
+        },
+        owner: { name: "admin" },
+        settings: {},
+        ai: {}
     };
     // Don't exit, try to run
 }

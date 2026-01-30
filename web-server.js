@@ -254,6 +254,10 @@ class WebServer {
     }
 
     start() {
+        if (!process.env.WEB_ADMIN_TOKEN) {
+            console.warn("[Web] Server disabled due to missing token.");
+            return;
+        }
         this.app.listen(this.port, () => {
             console.log(`Web Interface running at http://localhost:${this.port}`);
         });
