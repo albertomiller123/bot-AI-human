@@ -4,7 +4,7 @@
  * Captures POV screenshots for LLM visual analysis using prismarine-viewer.
  */
 
-const mineflayerViewer = require('prismarine-viewer').mineflayer;
+// const mineflayerViewer = require('prismarine-viewer').mineflayer; // Moved to init() for safety
 
 class VisualCortex {
     constructor(botCore) {
@@ -29,25 +29,38 @@ class VisualCortex {
 
         this.bot = this.botCore.bot;
 
-        // Check if port 3008 is in use
-        const port = 3008;
-        const isPortTaken = await this._isPortTaken(port);
+        // Try to find an available port starting from 3008
+        let port = 3008;
+        let foundPort = false;
+        const maxAttempts = 5;
 
-        if (isPortTaken) {
-            console.warn(`[VisualCortex] ⚠️ Port ${port} is busy. Vision system skipped to prevent crash.`);
-            console.warn(`[VisualCortex] Run 'netstat -ano | findstr :${port}' to find the locking process.`);
+        for (let i = 0; i < maxAttempts; i++) {
+            const currentPort = port + i;
+            const isTaken = await this._isPortTaken(currentPort);
+            if (!isTaken) {
+                port = currentPort;
+                foundPort = true;
+                break;
+            }
+            console.warn(`[VisualCortex] Port ${currentPort} busy, trying ${currentPort + 1}...`);
+        }
+
+        if (!foundPort) {
+            console.error(`[VisualCortex] ❌ No available ports found for vision system (tried ${maxAttempts} ports).`);
             return;
         }
 
         // prismarine-viewer headless mode for buffer capture
         try {
-            // Start viewer in headless mode (no browser display)
+            const mineflayerViewer = require('prismarine-viewer').mineflayer;
             this.viewer = mineflayerViewer(this.bot, {
-                port: port, // Different from web server port
+                port: port,
                 firstPerson: true,
-                viewDistance: 6
+                viewDistance: 6,
+                host: '127.0.0.1' // Restrict to localhost for security
             });
 
+            this.viewerPort = port;
             this.isInitialized = true;
             console.log(`[VisualCortex] Vision system initialized on port ${port}`);
         } catch (error) {
@@ -126,7 +139,7 @@ class VisualCortex {
         return {
             description: this._generateSceneDescription(blockAtCursor, entityAtCursor, nearbyBlocks),
             hasVision: this.isInitialized,
-            viewerUrl: this.isInitialized ? 'http://localhost:3008' : null,
+            viewerUrl: this.isInitialized ? `http://localhost:${this.viewerPort}` : null,
             camera: {
                 position: { x: Math.floor(pos.x), y: Math.floor(pos.y), z: Math.floor(pos.z) },
                 yaw: Math.round(yaw * 180 / Math.PI),

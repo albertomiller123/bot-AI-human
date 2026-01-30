@@ -6,14 +6,28 @@ const BotCore = require('./bot-core');
 // GLOBAL ERROR HANDLERS
 // ===================================
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('[Fatal] Unhandled Rejection at:', promise);
-    console.error('[Fatal] Reason:', reason);
+    const timestamp = new Date().toISOString();
+    const logMsg = `[${timestamp}] [Fatal] Unhandled Rejection at: ${promise}\nReason: ${reason}\n\n`;
+
+    console.error(logMsg);
+    try {
+        fs.appendFileSync('error.log', logMsg);
+    } catch (e) {
+        // Ignore write error
+    }
     // Don't exit - try to keep running
 });
 
 process.on('uncaughtException', (error) => {
-    console.error('[Fatal] Uncaught Exception:', error);
-    console.error('[Fatal] Stack:', error.stack);
+    const timestamp = new Date().toISOString();
+    const logMsg = `[${timestamp}] [Fatal] Uncaught Exception: ${error.message}\nStack: ${error.stack}\n\n`;
+
+    console.error(logMsg);
+    try {
+        fs.appendFileSync('error.log', logMsg);
+    } catch (e) {
+        console.error("Failed to write to error.log:", e);
+    }
 
     // Recoverable errors - don't crash
     const recoverableErrors = [
@@ -23,7 +37,7 @@ process.on('uncaughtException', (error) => {
     ];
 
     const isRecoverable = recoverableErrors.some(errType =>
-        error.message?.includes(errType) || error.code === errType
+        error.message?.includes(errType) || (error.code && error.code === errType)
     );
 
     if (isRecoverable) {
@@ -93,10 +107,10 @@ try {
             auth: "offline",
             username: "FallbackBot",
             host: "localhost",
-            port: 25565,
-            version: "1.20.4"
+            port: 5000,
+            version: "1.21.1"
         },
-        owner: { name: "admin" },
+        owner: { name: "thinhdzs1vn" },
         settings: {},
         ai: {}
     };
@@ -105,10 +119,13 @@ try {
 
 // Start Bot
 try {
+    console.log("Creating BotCore...");
     botInstance = new BotCore(config);
+    console.log("BotCore created. Starting...");
     botInstance.start();
     console.log("🚀 System initialized. Waiting for connection...");
 } catch (e) {
-    console.error("❌ Critical error during bot initialization:", e);
+    console.error("❌ Critical error during bot initialization:", e.message);
+    if (e.stack) console.error(e.stack);
     process.exit(1);
 }

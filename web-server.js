@@ -8,7 +8,7 @@ class WebServer {
         this.botCore = botCore;
         this.port = port;
         this.app = express();
-        this.apiSecret = process.env.API_SECRET; // Load from .env
+        // this.apiSecret = process.env.API_SECRET; // DEPRECATED
 
         this.app.use(cors());
         this.app.use(bodyParser.json());
@@ -32,12 +32,8 @@ class WebServer {
             const valid = token === AUTH_TOKEN || (token && token.startsWith('Bearer ') && token.split(' ')[1] === AUTH_TOKEN);
 
             if (!valid) {
-                // Backward compatibility with API Secret if token not set
-                if (this.apiSecret && req.headers.authorization === `Bearer ${this.apiSecret}`) {
-                    return next();
-                }
                 console.warn(`[Security] 403 Forbidden: ${req.path} from ${req.ip}`);
-                return res.status(403).json({ error: "Forbidden: Invalid Token. Use ?token=admin123" });
+                return res.status(403).json({ error: "Forbidden: Invalid Token. Use ?token=..." });
             }
             next();
         });
@@ -94,10 +90,10 @@ class WebServer {
                 const primitives = this.botCore.primitives;
                 const behaviors = this.botCore.behaviors;
 
-                // Safety: Check if bot is connected for commands that need it
+                // Safety: Check if bot is connected and spawned for commands that need it
                 const requiresBot = ['move_forward', 'move_back', 'move_left', 'move_right', 'jump', 'attack_nearest'];
-                if (requiresBot.includes(command) && !bot) {
-                    return res.status(503).json({ error: "Bot not connected to server" });
+                if (requiresBot.includes(command) && (!bot || !bot.entity)) {
+                    return res.status(503).json({ error: "Bot not ready (connecting or dead)" });
                 }
 
                 // Prevent conflict with AI Task Manager
@@ -253,14 +249,31 @@ class WebServer {
         });
     }
 
-    start() {
+    async start() {
         if (!process.env.WEB_ADMIN_TOKEN) {
             console.warn("[Web] Server disabled due to missing token.");
             return;
         }
-        this.app.listen(this.port, () => {
-            console.log(`Web Interface running at http://localhost:${this.port}`);
-        });
+
+        const tryStart = (port, attemptsLeft) => {
+            const server = this.app.listen(port, () => {
+                this.port = port;
+                console.log(`[Web] Interface running at http://localhost:${port}`);
+            });
+
+            server.on('error', (err) => {
+                if (err.code === 'EADDRINUSE' && attemptsLeft > 0) {
+                    console.warn(`[Web] Port ${port} is busy, trying ${port + 1}...`);
+                    tryStart(port + 1, attemptsLeft - 1);
+                } else if (err.code === 'EADDRINUSE') {
+                    console.error(`[Web] CRITICAL: All ports from ${this.port} to ${port} are busy. Web Server NOT started.`);
+                } else {
+                    console.error("[Web] ❌ Server error:", err);
+                }
+            });
+        };
+
+        tryStart(this.port, 5);
     }
 }
 

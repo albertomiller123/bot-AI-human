@@ -24,6 +24,7 @@ const ContextMemory = require('./behaviors/social/ContextMemory');
 
 class SurvivalSystem {
     constructor(botCore) {
+        console.log("SurvivalSystem constructor start");
         this.botCore = botCore;
         this.bot = null; // Lazy init
         this.lastHealth = 20;
@@ -110,7 +111,11 @@ class SurvivalSystem {
         // Start autonomous systems
         this.healthMonitor.start();
         this.stuckDetector.start();
-        console.log("[SurvivalSystem] Autonomous systems started (HealthMonitor, StuckDetector)");
+
+        // Phase 7: PVP
+        if (this.pvp) this.pvp.start();
+
+        console.log("[SurvivalSystem] Autonomous systems started (HealthMonitor, StuckDetector, PVP)");
 
         // Hook up Chat Engine
         this.bot.on('chat', (username, message) => {

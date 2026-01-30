@@ -11,14 +11,31 @@ class AdvancedPVP {
         this.lastAttackTime = 0;
         this.shieldDisabledUntil = 0;
 
+        // Auto-detect shield disable (Axe hit) - Moved to start()
+        this.shieldListener = null;
+    }
+
+    start() {
+        if (this.shieldListener) return; // Already started
+
+        console.log("[PVP] AdvancedPVP started.");
+
         // Auto-detect shield disable (Axe hit)
-        this.bot.on('entityStatus', (entity, status) => {
+        this.shieldListener = (entity, status) => {
             if (entity.id === this.bot.entity.id && status === 30) {
                 // Status 30 = Shield Disabled (approx 5 seconds / 100 ticks)
                 console.log("[PVP] 🛡️ Shield DISABLED by Axe!");
                 this.shieldDisabledUntil = Date.now() + 5000;
             }
-        });
+        };
+        this.bot.on('entityStatus', this.shieldListener);
+    }
+
+    stop() {
+        if (this.shieldListener) {
+            this.bot.removeListener('entityStatus', this.shieldListener);
+            this.shieldListener = null;
+        }
     }
 
     get bot() { return this.botCore.bot; }

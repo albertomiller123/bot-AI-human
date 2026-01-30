@@ -6,15 +6,13 @@ const GuardBehavior = require('./behaviors/GuardBehavior');
 class Behaviors {
     constructor(botCore) {
         this.botCore = botCore;
-        this.bot = botCore.bot;
+        // this.bot = botCore.bot; // FIXED: Cannot set property with getter
+        // console.log("Behaviors bot skipped (using getter)");
 
         // Access Layer 1
         this.primitives = botCore.primitives;
         // Register Guard Behavior
         this.guard = new GuardBehavior(botCore);
-
-        // Load sub-behaviors
-        // this.mining = new MiningBehavior(botCore);
     }
 
     /**

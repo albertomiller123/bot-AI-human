@@ -2,12 +2,14 @@ const { Vec3 } = require('vec3');
 
 class GuardBehavior {
     constructor(botCore) {
+        console.log("GuardBehavior constructor start");
         this.botCore = botCore;
         this.isActive = false;
         this.basePos = null;
         this.radius = 20;
         this.interval = null;
         this.engageTarget = null;
+        console.log("GuardBehavior constructor end");
     }
 
     get bot() { return this.botCore.bot; }

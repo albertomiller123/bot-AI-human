@@ -7,6 +7,38 @@ class MemoryManager {
         this.db = null;
     }
 
+    // --- SQLite Retry Wrappers ---
+    async _runWithRetry(sql, params = []) {
+        return this._executeWithRetry('run', sql, params);
+    }
+
+    async _getWithRetry(sql, params = []) {
+        return this._executeWithRetry('get', sql, params);
+    }
+
+    async _allWithRetry(sql, params = []) {
+        return this._executeWithRetry('all', sql, params);
+    }
+
+    async _executeWithRetry(method, sql, params, retries = 5, delay = 50) {
+        return new Promise((resolve, reject) => {
+            const attempt = (n) => {
+                this.db[method](sql, params, function (err, rowOrRows) { // Use function to get 'this' usually, but here checking err
+                    if (err) {
+                        if (err.code === 'SQLITE_BUSY' && n > 0) {
+                            console.warn(`[MemoryManager] SQLITE_BUSY. Retrying in ${delay}ms... (${n} left)`);
+                            setTimeout(() => attempt(n - 1), delay * 2); // Exponential backoff
+                            return;
+                        }
+                        return reject(err);
+                    }
+                    resolve(rowOrRows || (method === 'run' ? this : null)); // 'this' in run callback has changes/lastID
+                });
+            };
+            attempt(retries);
+        });
+    }
+
     async init() {
         return new Promise((resolve, reject) => {
             this.db = new sqlite3.Database(this.dbPath, (err) => {
@@ -68,31 +100,17 @@ class MemoryManager {
     }
 
     async getLTM(key) {
-        return new Promise((resolve, reject) => {
-            this.db.get("SELECT value FROM long_term WHERE key = ?", [key], (err, row) => {
-                if (err) return reject(err);
-                resolve(row ? JSON.parse(row.value) : null);
-            });
-        });
+        const row = await this._getWithRetry("SELECT value FROM long_term WHERE key = ?", [key]);
+        return row ? JSON.parse(row.value) : null;
     }
 
     async setLTM(key, value) {
         const val = JSON.stringify(value);
-        return new Promise((resolve, reject) => {
-            this.db.run("INSERT OR REPLACE INTO long_term (key, value) VALUES (?, ?)", [key, val], (err) => {
-                if (err) return reject(err);
-                resolve();
-            });
-        });
+        await this._runWithRetry("INSERT OR REPLACE INTO long_term (key, value) VALUES (?, ?)", [key, val]);
     }
 
     async logChat(username, message) {
-        return new Promise((resolve, reject) => {
-            this.db.run("INSERT INTO chat_logs (username, message) VALUES (?, ?)", [username, message], (err) => {
-                if (err) return reject(err);
-                resolve();
-            });
-        });
+        await this._runWithRetry("INSERT INTO chat_logs (username, message) VALUES (?, ?)", [username, message]);
     }
 
     // Legacy method (kept for backward compatibility)
@@ -143,82 +161,49 @@ class MemoryManager {
 
     // NEW: Efficient O(1) indexed item search
     async findItemInChests(itemName) {
-        return new Promise((resolve, reject) => {
-            this.db.all(
-                "SELECT chest_pos, x, y, z, count, slot FROM chest_items WHERE item_name = ?",
-                [itemName],
-                (err, rows) => {
-                    if (err) return reject(err);
-                    resolve(rows || []);
-                }
-            );
-        });
+        const rows = await this._allWithRetry(
+            "SELECT chest_pos, x, y, z, count, slot FROM chest_items WHERE item_name = ?",
+            [itemName]
+        );
+        return rows || [];
     }
 
     // --- NEW: Normalized SQL Methods (Phase 3+ Completion) ---
 
     async saveLocation(name, pos) {
-        return new Promise((resolve, reject) => {
-            this.db.run("INSERT OR REPLACE INTO locations (name, x, y, z) VALUES (?, ?, ?, ?)",
-                [name, pos.x, pos.y, pos.z], (err) => {
-                    if (err) return reject(err);
-                    resolve();
-                });
-        });
+        await this._runWithRetry("INSERT OR REPLACE INTO locations (name, x, y, z) VALUES (?, ?, ?, ?)",
+            [name, pos.x, pos.y, pos.z]);
     }
 
     async getLocation(name) {
-        return new Promise((resolve, reject) => {
-            this.db.get("SELECT * FROM locations WHERE name = ?", [name], (err, row) => {
-                if (err) return reject(err);
-                resolve(row);
-            });
-        });
+        return await this._getWithRetry("SELECT * FROM locations WHERE name = ?", [name]);
     }
 
     async getAllLocations() {
-        return new Promise((resolve, reject) => {
-            this.db.all("SELECT * FROM locations", (err, rows) => {
-                if (err) return reject(err);
-                // Convert array of rows to object map to match old LTM format expectations if needed
-                const locs = {};
-                rows.forEach(r => locs[r.name] = { x: r.x, y: r.y, z: r.z });
-                resolve(locs);
-            });
-        });
+        const rows = await this._allWithRetry("SELECT * FROM locations");
+        // Convert array of rows to object map to match old LTM format expectations if needed
+        const locs = {};
+        rows.forEach(r => locs[r.name] = { x: r.x, y: r.y, z: r.z });
+        return locs;
     }
 
     async logAction(action, params) {
         const paramsJson = JSON.stringify(params);
-        return new Promise((resolve, reject) => {
-            this.db.run("INSERT INTO action_history (action, params) VALUES (?, ?)",
-                [action, paramsJson], (err) => {
-                    if (err) return reject(err);
-                    resolve();
-                });
-        });
+        await this._runWithRetry("INSERT INTO action_history (action, params) VALUES (?, ?)",
+            [action, paramsJson]);
     }
 
     async getRecentActions(limit = 10) {
-        return new Promise((resolve, reject) => {
-            this.db.all("SELECT * FROM action_history ORDER BY id DESC LIMIT ?", [limit], (err, rows) => {
-                if (err) return reject(err);
-                resolve(rows.map(r => ({
-                    action: r.action,
-                    params: JSON.parse(r.params),
-                    timestamp: r.timestamp
-                })));
-            });
-        });
+        const rows = await this._allWithRetry("SELECT * FROM action_history ORDER BY id DESC LIMIT ?", [limit]);
+        return rows.map(r => ({
+            action: r.action,
+            params: JSON.parse(r.params),
+            timestamp: r.timestamp
+        }));
     }
 
     async getRecentChats(limit = 20) {
-        return new Promise((resolve, reject) => {
-            this.db.all("SELECT * FROM chat_logs ORDER BY id DESC LIMIT ?", [limit], (err, rows) => {
-                if (err) return reject(err);
-                resolve(rows);
-            });
-        });
+        return await this._allWithRetry("SELECT * FROM chat_logs ORDER BY id DESC LIMIT ?", [limit]);
     }
 
     // Backup compatibility for bot-core

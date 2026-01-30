@@ -173,41 +173,47 @@ class TaskManager {
 
         console.log(`[TaskManager] Executing step ${this.currentStepIndex + 1}/${this.activeTask.steps.length}: ${step.action} ${JSON.stringify(step.params || {})}`);
 
-        // Legacy to Snake_Case Action Mapping (for backward compatibility)
+        // ALL actions should now follow snake_case to match action-registry.js
+        // Mapping for backward compatibility or alternate naming schemas
         const actionMap = {
-            'sayMessage': 'send_chat',
-            'findAndCollect': 'gather_resource',
+            'sayMessage': 'say_message',
+            'findAndCollect': 'find_and_collect',
             'attackTarget': 'attack_target',
-            'equipBestWeapon': 'equip_weapon',
-            'equipBestArmor': 'equip_armor',
-            'equipBestTool': 'equip_tool',
-            'goToPosition': 'move_to',
+            'equipBestWeapon': 'equip_best_weapon',
+            'equipBestArmor': 'equip_best_armor',
+            'equipBestTool': 'equip_best_tool',
+            'goToPosition': 'pathfind_to',
+            'pathfindTo': 'pathfind_to',
             'craftItem': 'craft_item',
             'followPlayer': 'follow_player',
             'rememberLocation': 'remember_location',
-            'listKnownLocations': 'list_locations',
-            'stopActions': 'stop_and_wait',
-            'eatUntilFull': 'eat_food',
+            'stopActions': 'stop_actions',
+            'eatUntilFull': 'eat_until_full',
             'placeBlockAt': 'place_block',
-            'giveItemToPlayer': 'give_item',
-            'flattenArea': 'flatten_area'
+            'giveItemToPlayer': 'give_item_to_player',
+
+            // Mapping from index.js internal names if different
+            'send_chat': 'say_message',
+            'gather_resource': 'find_and_collect',
+            'equip_weapon': 'equip_best_weapon',
+            'equip_armor': 'equip_best_armor',
+            'equip_tool': 'equip_best_tool',
+            'move_to': 'pathfind_to',
+            'list_locations': 'list_known_locations',
+            'stop_and_wait': 'stop_actions',
+            'eat_food': 'eat_until_full',
+            'give_item': 'give_item_to_player'
         };
+
         if (actionMap[step.action]) {
-            console.log(`[TaskManager] Mapping legacy action '${step.action}' -> '${actionMap[step.action]}'`);
+            console.log(`[TaskManager] Standardizing action: '${step.action}' -> '${actionMap[step.action]}'`);
             step.action = actionMap[step.action];
         }
-
-        // Legacy Mapping Removed - All actions should now be standard
-        // if (step.action === 'flattenArea') step.action = 'flatten_area';
-
-        // Dynamic Action Routing (3-Layer Architecture)
-        // Priority: Coordinator (Tier 3) -> Behaviors (Tier 2) -> Primitives (Tier 1)
 
         const action = step.action;
         const params = step.params || {};
 
         // SMART PARAMS (Auto-Fill)
-        // If critical params are missing, try to fill from context
         if (action === 'look_at_player' && !params.name) {
             const nearest = this.botCore.bot.nearestEntity(e => e.type === 'player');
             if (nearest) params.name = nearest.username;
@@ -217,38 +223,33 @@ class TaskManager {
             params.name = `loc_${Date.now()}`;
         }
 
-        // 1. Check Coordinator (Tier 3 - REMOVED/MERGED)
-        // logic moved to behaviors
-
-        // 2. Check Behaviors (Tier 2 - Player Actions)
+        // 1. Check direct TaskManager logic
         if (action === 'guardian_mode') {
             const error = params.error || "Unknown Error";
             await this.botCore.activateGuardianMode(error);
             return { success: true };
         }
 
-        if (typeof this.botCore.behaviors[action] === 'function') {
-            // Execute behavior and check standardized result
-            // Use call to ensure 'this' context if needed, though simpler is just explicit param mapping for criticals
+        // 2. Check Behaviors (Tier 2)
+        if (this.botCore.behaviors && typeof this.botCore.behaviors[action] === 'function') {
             const result = await this.botCore.behaviors[action](...Object.values(params));
 
-            // Behaviors now return { success, message, data } - validate result
             if (result && typeof result === 'object' && 'success' in result) {
                 if (!result.success) {
-                    throw new Error(result.message || `Action ${action} failed`);
+                    throw new Error(result.message || `Behavior ${action} failed`);
                 }
-                console.log(`[TaskManager] ${action}: ${result.message}`);
+                console.log(`[TaskManager] Behavior ${action}: ${result.message}`);
             }
             return;
         }
 
-        // 3. Check Primitives (Tier 1 - Muscles)
-        if (typeof this.botCore.primitives[action] === 'function') {
+        // 3. Check Primitives (Tier 1)
+        if (this.botCore.primitives && typeof this.botCore.primitives[action] === 'function') {
             await this.botCore.primitives[action](...Object.values(params));
             return;
         }
 
-        throw new Error(`Unknown action: ${action} (Not found in Coordinator, Behaviors, or Primitives)`);
+        throw new Error(`Unknown action: ${action} (Check action-registry.js vs code logic)`);
     }
 
     startPersistentTaskMonitoring(action) {

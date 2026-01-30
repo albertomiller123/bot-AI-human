@@ -138,8 +138,13 @@ class AIManager extends EventEmitter {
         if (this.pendingRequests.has(id)) {
             const request = this.pendingRequests.get(id);
             clearTimeout(request.timeout);
-            request.reject(new Error("Request Cancelled (Race Condition / Timeout)"));
+            request.reject(new Error("Request Cancelled (User/System Abort)"));
             this.pendingRequests.delete(id);
+
+            // Send abort signal to worker
+            if (this.worker) {
+                this.worker.postMessage({ type: 'abort', id });
+            }
             return true;
         }
         return false;
@@ -147,22 +152,12 @@ class AIManager extends EventEmitter {
 
 
     async fast(prompt, jsonMode = false) {
-        try {
-            return await this._sendRequest('fast', prompt, jsonMode);
-        } catch (e) {
-            console.error(`[AIManager/Fast] Error: ${e.message}`);
-            return null;
-        }
+        return await this._sendRequest('fast', prompt, jsonMode);
     }
 
     async slow(prompt, jsonMode = false) {
-        try {
-            if (jsonMode) console.log("[AIManager] System 2 Thinking (Worker)...");
-            return await this._sendRequest('slow', prompt, jsonMode);
-        } catch (e) {
-            console.error(`[AIManager/Slow] Error: ${e.message}`);
-            return null;
-        }
+        if (jsonMode) console.log("[AIManager] System 2 Thinking (Worker)...");
+        return await this._sendRequest('slow', prompt, jsonMode);
     }
 }
 

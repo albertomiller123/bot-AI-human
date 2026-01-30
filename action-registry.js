@@ -87,6 +87,19 @@ const ACTION_SCHEMAS = {
         }
     },
 
+    flatten_area: {
+        name: "flatten_area",
+        description: "Flatten an area (dig high blocks, fill low blocks)",
+        parameters: {
+            type: "object",
+            properties: {
+                corner1: { type: "object", properties: { x: { type: "integer" }, y: { type: "integer" }, z: { type: "integer" } } },
+                corner2: { type: "object", properties: { x: { type: "integer" }, y: { type: "integer" }, z: { type: "integer" } } }
+            },
+            required: ["corner1", "corner2"]
+        }
+    },
+
     // === NAVIGATION ===
     pathfind_to: {
         name: "pathfind_to",
