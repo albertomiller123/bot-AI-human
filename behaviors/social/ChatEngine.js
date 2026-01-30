@@ -1,8 +1,17 @@
+const LieLedger = require('../../core/social/LieLedger');
+const SocialGraph = require('../../core/social/SocialGraph');
+const SocialFilter = require('../../core/social/SocialFilter');
+
 class ChatEngine {
     constructor(botCore) {
         this.botCore = botCore;
         this.messageHistory = [];
         this.isProcessing = false;
+
+        // Social Brain v2
+        this.lieLedger = new LieLedger();
+        this.socialGraph = new SocialGraph();
+        this.socialFilter = new SocialFilter(this.socialGraph);
 
         // Persona Configuration
         this.persona = {
@@ -19,8 +28,13 @@ class ChatEngine {
     async handleChat(username, message) {
         if (username === this.bot.username) return;
 
-        // Add to history
-        // Log chat to Cognitive System
+        // Init Filter Name
+        if (!this.socialFilter.myUsername) this.socialFilter.setBotName(this.bot.username);
+
+        // Update Social Graph
+        this.socialGraph.updateInteraction(username, 'chat');
+
+        // Log to Core Cognitive (Optional)
         if (this.botCore.survivalSystem && this.botCore.survivalSystem.cognitive) {
             this.botCore.survivalSystem.cognitive.logExperience('Chat', `${username}: ${message}`);
         }
@@ -28,51 +42,66 @@ class ChatEngine {
         this.chatHistory.push({ role: 'user', content: `${username}: ${message}` });
         if (this.chatHistory.length > 10) this.chatHistory.shift();
 
-        // 1b. Stealth Mode (Phase 13): Disable In-Game Commands
-        // We do NOT listen to /cmd in public chat anymore to avoid detection.
-        // Commands are only accepted via Web API (handled in web-server.js -> ButlerBehavior)
+        // 1. Social Filter Decision
+        const decision = this.socialFilter.decide(username, message, false); // Assuming public chat is not whisper
+        console.log(`[Social] Decision for ${username}: ${decision.action} (${decision.reason})`);
 
-        /* 
-        if (message.startsWith('/')) {
-             ... removed ...
-        } 
-        */
+        if (decision.action === 'ignore') return;
 
-        // 1. Decide if we should reply (not every message needs reply)
-        if (!message.toLowerCase().includes(this.bot.username) && Math.random() > 0.3) return;
+        if (decision.action === 'deflect') {
+            await this.simulateTyping(this.getDeflection());
+            return;
+        }
 
-        // 2. Generate Reply using LLM
-        // Mocking LLM call for now if setup is complex, else use shared AI layer logic
-        // For MVP, we use simple heuristic + mock
-        const reply = await this.generateReply(username, message);
+        if (decision.action === 'execute') {
+            // Check if message is a command
+            const cmdMatch = message.match(/^\/(\w+)/) || message.match(/^!(\w+)/) || message.match(/^(\w+)$/);
+            // Simple command parsing: "come", "/come", "!come"
+            if (cmdMatch) {
+                const cmd = cmdMatch[1].toLowerCase();
+                if (await this.handleCommand(cmd, username)) return;
+            }
+            // If not a command, fall through to reply (Owner chatting normally)
+        }
+
+        // 2. Generate Reply using LLM + Lie Ledger
+        const facts = this.lieLedger.getFacts(username).map(f => f.text).join('; ');
+        const reply = await this.generateReply(username, message, facts);
 
         if (reply) {
             await this.simulateTyping(reply);
+            // Record what we said to keep our story straight
+            this.lieLedger.addFact(username, reply);
         }
+    }
+
+    getDeflection() {
+        const excuses = [
+            "lag qua", "dang ban ti", "full ruong roi", "doi ti", "...", "dang qua map khac", "lag ko nghe gi"
+        ];
+        return excuses[Math.floor(Math.random() * excuses.length)];
     }
 
     setMemory(memory) {
         this.memory = memory;
     }
 
-    async generateReply(username, message) {
+    async generateReply(username, message, knownFacts) {
         // Phase 10: Dynamic Persona based on Relationship
-        let personaType = this.persona.type; // Default
+        let personaType = this.persona.type;
+        const role = this.socialGraph.getRole(username);
 
-        if (this.memory) {
-            const rel = this.memory.getRelationship(username);
-            if (rel === 1) personaType = 'friendly'; // Friend
-            if (rel === -1) personaType = 'toxic';   // Nemesis
-        }
+        if (role === 'owner') personaType = 'friendly'; // Always nice to boss
+        if (role === 'trusted') personaType = 'friendly';
+
+        // MVP: Simple mocked response since we haven't integrated full LLM prompt builder here
+        // In real version, we would inject `knownFacts` into the prompt.
 
         const responses = {
             toxic: ["?", "ga", "cut", "ai hoi?", "tuoi?", "solo ko?", "m is nothing", "ez"],
-            friendly: ["hi bestie", "hello friend", "can i help u?", "want some food?", "<3"],
+            friendly: ["hi bestie", "hello friend", "can i help u?", "want some food?", "<3", "ok bro"],
             noob: ["how to craft?", "lag qua", "where am i?", "help", "who r u?"]
         };
-
-        // Use friendly as fallback for neutral/noob in default config, or stick to configured persona
-        // If relationship is Neutral (0), we stick to `this.persona.type` (which might be 'toxic' or 'noob')
 
         const palette = responses[personaType] || responses.friendly;
         return palette[Math.floor(Math.random() * palette.length)];
@@ -99,15 +128,40 @@ class ChatEngine {
         }
     }
 
+    const Typos = require('../../core/humanizer/Typos');
+
+class ChatEngine {
+    constructor(botCore) {
+        // ... previous init ...
+        this.typos = new Typos();
+        // ...
+    }
+
     async simulateTyping(text) {
-        if (this.botCore.humanizer) {
-            await this.botCore.humanizer.say(text);
-        } else {
-            // Fallback
-            console.log(`[ChatEngine] Humanizer missing, using instant chat.`);
-            this.bot.chat(text);
+        // 1. Humanize (Add typos)
+        let finalText = text;
+        let correction = null;
+
+        if (Math.random() < 0.1) { // 10% chance to typo
+            finalText = this.typos.humanize(text, 1.0); // Force typo if check passes
+            if (finalText !== text && this.typos.shouldCorrect()) {
+                correction = "*" + text;
+            }
+        }
+
+        // 2. Variable Delay (WPM simulation)
+        // Avg typing speed: 200 CPM ~ 3-4 chars per 100ms
+        const delay = Math.max(500, finalText.length * 50);
+        await new Promise(r => setTimeout(r, delay));
+
+        this.bot.chat(finalText);
+
+        if (correction) {
+            await new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
+            this.bot.chat(correction);
         }
     }
+}
 }
 
 module.exports = ChatEngine;

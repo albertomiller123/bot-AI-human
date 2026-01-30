@@ -1,0 +1,10 @@
+{
+  "TestUser": {
+    "facts_told": [
+      {
+        "text": "I am a bot",
+        "timestamp": 1769785091623
+      }
+    ]
+  }
+}

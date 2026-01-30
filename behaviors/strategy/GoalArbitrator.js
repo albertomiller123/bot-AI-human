@@ -1,3 +1,6 @@
+const AgendaScheduler = require('./AgendaScheduler');
+const HumanIdle = require('../idle/HumanIdle');
+
 // Danh sách thức ăn được chấp nhận (saturation từ cao đến thấp)
 const ACCEPTABLE_FOODS = [
     'cooked_beef', 'cooked_porkchop', 'cooked_mutton',
@@ -10,6 +13,10 @@ class GoalArbitrator {
     constructor(botCore) {
         this.botCore = botCore;
         this.bot = botCore.bot;
+
+        // Mission Control
+        this.agenda = new AgendaScheduler(botCore);
+        this.humanIdle = new HumanIdle(botCore);
 
         // Define hierarchy of needs/goals
         // FIX: Health priority (100) > Food priority (95)
@@ -25,12 +32,30 @@ class GoalArbitrator {
             },
             { id: 'survival_health', priority: 100, check: () => this.needsHealth() && this.hasFood() },
             { id: 'survival_food', priority: 95, check: () => this.needsFood() },
+
+            // AGENDA (Daily Goal) - Priority 80
+            // This ensures we do the daily task if we aren't dying
+            {
+                id: 'daily_agenda',
+                priority: 80,
+                check: () => this.hasAgenda()
+            },
+
             { id: 'progression_iron', priority: 50, check: () => this.needsIron() },
             { id: 'progression_diamond', priority: 40, check: () => this.needsDiamond() },
             { id: 'progression_nether', priority: 30, check: () => this.readyForNether() }
         ];
 
         this.currentGoal = null;
+    }
+
+    hasAgenda() {
+        const agenda = this.agenda.getAgenda();
+        return !!agenda;
+    }
+
+    getDailyAgenda() {
+        return this.agenda.getAgenda();
     }
 
     evaluate() {
@@ -56,13 +81,19 @@ class GoalArbitrator {
         for (const goal of this.goals.sort((a, b) => b.priority - a.priority)) {
             if (goal.check()) {
                 if (this.currentGoal !== goal.id) {
-                    console.log(`[Strategy] New Grand Goal: ${goal.id.toUpperCase()}`);
+                    const goalId = goal.id === 'daily_agenda' ?
+                        `AGENDA:${this.agenda.getAgenda().toUpperCase()}` : goal.id.toUpperCase();
+
+                    console.log(`[Strategy] New Grand Goal: ${goalId}`);
                     this.currentGoal = goal.id;
-                    return goal.id;
+                    return goal.id; // If it's agenda, the Orchestrator will ask getDailyAgenda()
                 }
-                return null;
+                return null; // Stick to same goal
             }
         }
+
+        // If IDLE, perform Human Idle
+        this.humanIdle.doIdle();
         return 'idle';
     }
 
