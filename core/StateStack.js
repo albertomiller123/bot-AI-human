@@ -8,10 +8,9 @@ class StateStack {
     push(stateName, context = {}) {
         console.log(`[StateStack] Pushing State: ${stateName}`);
 
-        // Save current "Main Task" context if stack was empty (Main -> Reflex)
-        if (this.stack.length === 0) {
-            this.savedMainGoal = this.botCore.survivalSystem.currentGoal;
-            this.botCore.pathfinder.setGoal(null); // Pause current movement
+        // Lock GoalManager to prevent it from interfering with Reflex
+        if (this.botCore.goalManager) {
+            this.botCore.goalManager.lock();
         }
 
         this.stack.push({ name: stateName, context, startTime: Date.now() });
@@ -24,18 +23,15 @@ class StateStack {
         const finished = this.stack.pop();
         console.log(`[StateStack] Popped State: ${finished.name}`);
 
-        if (this.stack.length > 0) {
-            // Resume previous reflex? (Nested reflexes not essential for MVP, but kept structure)
-            const prev = this.stack[this.stack.length - 1];
-            console.log(`[StateStack] Resuming nested state: ${prev.name}`);
-        } else {
-            // Stack empty -> Resume Main Task
+        if (this.stack.length === 0) {
+            // Stack empty -> Resume Main Task via GoalManager
             this.active = false;
-            console.log(`[StateStack] Resuming Main Goal: ${this.savedMainGoal}`);
 
-            // Force GoalArbitrator to re-evaluate or resume
-            if (this.botCore.survivalSystem) {
-                this.botCore.survivalSystem.executeGoal(this.savedMainGoal);
+            // CRITICAL FIX: Release control to GoalManager
+            // GoalManager will see bot is free and pick best goal in next tick()
+            if (this.botCore.goalManager) {
+                console.log("[StateStack] Releasing control to GoalManager");
+                this.botCore.goalManager.unlock();
             }
         }
     }

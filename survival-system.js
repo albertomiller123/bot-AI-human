@@ -194,51 +194,58 @@ class SurvivalSystem {
         // 1. Ask GoalArbitrator (The Biological Brain)
         const goalId = this.brain.evaluate(); // Returns 'critical_foraging', 'survival_health', 'idle', etc.
 
-        let priority = 0;
-        let executeFn = null;
+        let stopFn = async () => {
+            if (this.botCore.bot && this.botCore.bot.pathfinder) this.botCore.bot.pathfinder.setGoal(null);
+        };
 
         switch (goalId) {
             case 'critical_foraging':
                 priority = 100; // Critical
-                executeFn = () => {
+                executeFn = async () => {
                     console.log("[Survival] Executing Critical Foraging");
-                    this.gatherer.findFood();
+                    await this.gatherer.findFood();
                 };
+                stopFn = async () => this.gatherer.stop ? this.gatherer.stop() : null;
                 break;
             case 'survival_health':
                 priority = 95;
-                executeFn = () => console.log("[Survival] Seeking Safety/Health"); // TODO: Implement Shelter
+                executeFn = async () => console.log("[Survival] Seeking Safety/Health"); // TODO: Implement Shelter
                 break;
             case 'survival_food':
                 priority = 90;
-                executeFn = () => this.gatherer.findFood();
+                executeFn = async () => await this.gatherer.findFood();
+                stopFn = async () => this.gatherer.stop ? this.gatherer.stop() : null;
                 break;
             case 'daily_agenda':
                 priority = 80; // High but overrideable by user
-                executeFn = () => this.executeAgenda(this.brain.getDailyAgenda());
+                executeFn = async () => await this.executeAgenda(this.brain.getDailyAgenda());
                 break;
             case 'progression_iron':
                 priority = 50;
-                executeFn = () => this.miner.mineLevel(this.config.mining.ironLevel);
+                executeFn = async () => await this.miner.mineLevel(this.config.mining.ironLevel);
+                stopFn = async () => this.miner.stop ? this.miner.stop() : null;
                 break;
             case 'progression_diamond':
                 priority = 40;
-                executeFn = () => this.miner.mineLevel(this.config.mining.stripMineLevel);
+                executeFn = async () => await this.miner.mineLevel(this.config.mining.stripMineLevel);
+                stopFn = async () => this.miner.stop ? this.miner.stop() : null;
                 break;
             case 'progression_nether':
                 priority = 30;
-                executeFn = () => this.nether.findFortress();
+                executeFn = async () => await this.nether.findFortress();
+                stopFn = async () => this.nether.stop ? this.nether.stop() : null;
                 break;
             default:
                 priority = 0;
-                executeFn = () => { }; // Idle
+                executeFn = async () => { }; // Idle
         }
 
         if (priority > 0) {
             return {
                 id: goalId,
                 priority: priority,
-                execute: executeFn
+                execute: executeFn,
+                stop: stopFn
             };
         }
         return null; // No bid
