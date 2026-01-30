@@ -118,12 +118,9 @@ class VectorDB {
 
         this.saveTimer = setTimeout(() => {
             try {
-                // Pruning: Keep only last 1000 memories
+                // Pruning (User Request)
                 if (this.vectors.length > 1000) {
-                    // Sort by timestamp (newest last) - assumed push order
-                    // Just slice the end
-                    this.vectors = this.vectors.slice(this.vectors.length - 1000);
-                    console.log("[VectorDB] ✂️ Pruned old memories. Count:", this.vectors.length);
+                    this.vectors = this.vectors.slice(-1000); // Chỉ giữ 1000 ký ức mới nhất
                 }
 
                 const dir = path.dirname(this.dbPath);

@@ -24,9 +24,9 @@ class StripMiner {
             if (this.trashBlocks.includes(item.name)) {
                 try {
                     await this.bot.tossStack(item);
-                    await new Promise(r => setTimeout(r, 600)); // Delay to prevent spam kick
+                    await new Promise(r => setTimeout(r, 500)); // Delay để không bị server kick
                 } catch (e) {
-                    console.log(`[Mining] Failed to toss ${item.name}:`, e.message);
+                    console.log(`[Mining] Lỗi vứt đồ ${item.name}:`, e.message);
                 }
             }
         }
