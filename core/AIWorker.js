@@ -88,12 +88,14 @@ async function callAI(data) {
 }
 
 // Message Listener
-parentPort.on('message', async (message) => {
-    if (message.type === 'init') {
-        init(message.config);
-        parentPort.postMessage({ type: 'init_done' });
-    } else if (message.type === 'call') {
-        const result = await callAI(message.data);
-        parentPort.postMessage({ type: 'result', result });
-    }
-});
+if (parentPort) {
+    parentPort.on('message', async (message) => {
+        if (message.type === 'init') {
+            init(message.config);
+            parentPort.postMessage({ type: 'init_done' });
+        } else if (message.type === 'call') {
+            const result = await callAI(message.data);
+            parentPort.postMessage({ type: 'result', result });
+        }
+    });
+}

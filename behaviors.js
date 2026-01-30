@@ -9,9 +9,9 @@ class Behaviors {
         this.bot = botCore.bot;
 
         // Access Layer 1
-        // this.primitives = botCore.primitives;
+        this.primitives = botCore.primitives;
         // Register Guard Behavior
-        // this.guard = new GuardBehavior(botCore);
+        this.guard = new GuardBehavior(botCore);
 
         // Load sub-behaviors
         // this.mining = new MiningBehavior(botCore);

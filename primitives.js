@@ -29,23 +29,58 @@ class Primitives {
     }
 
     async smoothLookAt(position) {
-        const target = new Vec3(position.x, position.y, position.z);
-        const botPos = this.bot.entity.position.offset(0, this.bot.entity.height, 0);
-        const delta = target.minus(botPos);
-        const yaw = Math.atan2(-delta.x, -delta.z);
-        const groundDist = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
-        const pitch = Math.atan2(delta.y, groundDist);
+        // Non-blocking smooth look using physics ticks
+        return new Promise((resolve) => {
+            const target = new Vec3(position.x, position.y, position.z);
+            const botPos = this.bot.entity.position.offset(0, this.bot.entity.height, 0);
+            const delta = target.minus(botPos);
 
-        const steps = 5;
-        const currentYaw = this.bot.entity.yaw;
-        const currentPitch = this.bot.entity.pitch;
+            const targetYaw = Math.atan2(-delta.x, -delta.z);
+            const groundDist = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
+            const targetPitch = Math.atan2(delta.y, groundDist);
 
-        for (let i = 1; i <= steps; i++) {
-            const interpolatedYaw = currentYaw + (yaw - currentYaw) * (i / steps);
-            const interpolatedPitch = currentPitch + (pitch - currentPitch) * (i / steps);
-            await this.bot.look(interpolatedYaw, interpolatedPitch, true);
-            await new Promise(r => setTimeout(r, 20));
-        }
+            const steps = 10; // 10 ticks = 0.5 seconds
+            let currentStep = 0;
+            const startYaw = this.bot.entity.yaw;
+            const startPitch = this.bot.entity.pitch;
+
+            // Calculate shortest rotation direction (shortest arc)
+            let diffYaw = targetYaw - startYaw;
+            while (diffYaw > Math.PI) diffYaw -= 2 * Math.PI;
+            while (diffYaw < -Math.PI) diffYaw += 2 * Math.PI;
+
+            const diffPitch = targetPitch - startPitch;
+
+            const onTick = () => {
+                currentStep++;
+                if (currentStep > steps) {
+                    this.bot.removeListener('physicsTick', onTick);
+                    resolve();
+                    return;
+                }
+
+                // Human-like Mouse Movement (Bezier Curve with subtle "S" shape or overshoot)
+                const t = currentStep / steps;
+
+                // Control points for "S" curve or slight overshoot
+                // p0=0, p1=0.3, p2=0.85, p3=1
+                const p1 = 0.3;
+                const p2 = 0.85;
+
+                const t2 = t * t;
+                const t3 = t2 * t;
+
+                // Cubic Bezier Formula: (1-t)^3*p0 + 3*(1-t)^2*t*p1 + 3*(1-t)*t^2*p2 + t^3*p3
+                const ease = 3 * p1 * t * (1 - t) * (1 - t) + 3 * p2 * t2 * (1 - t) + t3;
+
+                const newYaw = startYaw + (diffYaw * ease);
+                const newPitch = startPitch + (diffPitch * ease);
+
+                this.bot.look(newYaw, newPitch, true); // Force update
+            };
+
+            this.bot.on('physicsTick', onTick);
+        });
     }
 
     async smartMove(goal) {

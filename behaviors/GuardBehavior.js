@@ -1,133 +1,137 @@
-const { goals } = require('mineflayer-pathfinder');
-const { GoalBlock } = goals;
 const { Vec3 } = require('vec3');
 
 class GuardBehavior {
     constructor(botCore) {
         this.botCore = botCore;
-        // Note: Do NOT assign this.bot here - it's null at construction time
         this.isActive = false;
-        this.radius = 20;
         this.basePos = null;
-        this.isFighting = false;
-        this.scanInterval = null;
+        this.radius = 20;
+        this.interval = null;
+        this.engageTarget = null;
     }
 
-    // Lazy getter - bot is only available after spawn
     get bot() { return this.botCore.bot; }
 
     start(radius = 20) {
-        if (this.isActive) return;
-        this.isActive = true;
-        this.radius = radius;
+        if (!this.bot || !this.bot.entity) {
+            console.error("[Guard] Cannot start: Bot not ready.");
+            return;
+        }
+
         this.basePos = this.bot.entity.position.clone();
+        this.radius = radius;
+        this.isActive = true;
+        this.engageTarget = null;
 
-        this.botCore.say(`🛡️ Guard Mode ACTIVATED. Base set at ${this.basePos}. Radius: ${radius}`);
-        this.botCore.memoryManager?.saveLocation('base', this.basePos); // Ensure base is updated
+        console.log(`[Guard] Started. Base: ${this.basePos}, Radius: ${this.radius}`);
+        this.botCore.say(`Guard Mode ON. Base set at ${this.basePos.floored()}. Radius: ${this.radius}`);
 
-        this.scanInterval = setInterval(() => this.scanLoop(), 1000); // Scan every second
+        if (this.interval) clearInterval(this.interval);
+        this.interval = setInterval(() => this.tick(), 1000);
     }
 
     stop() {
-        if (!this.isActive) return;
         this.isActive = false;
-        if (this.scanInterval) clearInterval(this.scanInterval);
-        if (this.bot?.pvp) this.bot.pvp.stop();
-        if (this.bot?.pathfinder) this.bot.pathfinder.setGoal(null);
-        this.isFighting = false;
-        this.botCore.say("🛑 Guard Mode DEACTIVATED.");
-    }
+        if (this.interval) clearInterval(this.interval);
+        this.engageTarget = null;
 
-    async scanLoop() {
-        if (!this.isActive || this.isFighting) return;
-
-        // 1. Check health
-        if (this.bot.health < 10) {
-            // Let SurvivalSystem handle eating, but maybe retreat?
-            // this.botCore.survivalSystem.eat();
+        if (this.bot && this.bot.pvp) {
+            this.bot.pvp.stop();
         }
 
-        // 2. Scan for threats
+        console.log("[Guard] Stopped.");
+        this.botCore.say("Guard Mode OFF.");
+    }
+
+    async tick() {
+        if (!this.isActive || !this.bot) return;
+
+        // Priority 1: Check Health
+        await this.checkHealth();
+
+        // Priority 2: Engage existing target
+        if (this.engageTarget) {
+            if (!this.isValidTarget(this.engageTarget)) {
+                console.log("[Guard] Target lost/dead. Returning to patrol.");
+                this.engageTarget = null;
+                this.bot.pvp.stop();
+            } else {
+                return; // Let PVP plugin handle combat
+            }
+        }
+
+        // Priority 3: Scan for new threats
         const target = this.scanForThreats();
         if (target) {
-            await this.engage(target);
-        } else {
-            // 3. Patrol / Return to Base
-            await this.patrol();
+            this.engage(target);
+            return;
+        }
+
+        // Priority 4: Return to base if too far
+        const dist = this.bot.entity.position.distanceTo(this.basePos);
+        if (dist > this.radius * 1.5 || (dist > 5 && !this.engageTarget)) {
+            // Only move back if significantly away or idle
+            // Use primitive move to avoid conflict
+            // But we are in a tick loop, so we should check if moving.
+            if (!this.bot.pathfinder.isMoving()) {
+                console.log("[Guard] Returning to base...");
+                // Use move_to from primitives if possible, or direct pathfinder
+                // this.botCore.primitives.move_to(this.basePos).catch(() => {});
+                // Use raw pathfinder to be safe async
+                const { goals } = require('mineflayer-pathfinder');
+                this.bot.pathfinder.setGoal(new goals.GoalNear(this.basePos.x, this.basePos.y, this.basePos.z, 1));
+            }
         }
     }
 
     scanForThreats() {
-        // Filter entities: Mob/Player, Hostile, Within Radius
-        const validThreats = Object.values(this.bot.entities).filter(e => {
-            if (!e || !e.position) return false;
+        const filter = (e) => {
+            // Must be hostile OR player (except owner/friends)
+            // Mineflayer uses 'mob' for generic mobs, 'hostile' is custom or rare
+            const isHostile = e.type === 'hostile' || e.type === 'mob';
+            const isPlayer = e.type === 'player' && e.username !== this.bot.username;
 
-            // Distance check
-            const dist = e.position.distanceTo(this.basePos);
-            if (dist > this.radius) return false;
+            if (!isHostile && !isPlayer) return false;
 
-            // Type check
-            const isHostile = (e.type === 'hostile' || e.type === 'mob'); // Mineflayer sometimes categorizes differently
-            // Note: 'mob' includes passive ones, we need specific check or rely on 'hostile'
-            // For now, attack specific hostile names or use mineflayer-pvp detection?
-            // Simple whitelist check for now
-            const hostileNames = ['zombie', 'skeleton', 'creeper', 'spider', 'witch', 'pillager', 'enderman'];
-            const isEnemyMob = hostileNames.includes(e.name);
+            // Range check
+            if (e.position.distanceTo(this.bot.entity.position) > this.radius) return false;
 
-            // Player check (PVP)
-            const isPlayer = (e.type === 'player' && e.username !== this.bot.username);
+            // Whitelist check
+            if (isPlayer && this.isWhitelisted(e.username)) return false;
 
-            // Whitelist Check (Owner/Friends)
-            if (isPlayer) {
-                if (this.botCore.config.owner && e.username === this.botCore.config.owner.name) return false;
-                // TODO: Check friends list
-            }
+            return true;
+        };
 
-            return isEnemyMob || isPlayer;
-        });
-
-        // Return closest threat
-        if (validThreats.length > 0) {
-            validThreats.sort((a, b) => a.position.distanceTo(this.bot.entity.position) - b.position.distanceTo(this.bot.entity.position));
-            return validThreats[0];
-        }
-
-        return null;
+        return this.bot.nearestEntity(filter);
     }
 
-    async engage(target) {
-        if (this.isFighting) return;
-        this.isFighting = true;
+    isWhitelisted(username) {
+        const configOwner = this.botCore.config.owner?.name;
+        if (username === configOwner) return true;
 
-        this.botCore.say(`⚔️ Phat hien ${target.name || 'ke thu'}! TAN CONG!`);
-
-        try {
-            await this.bot.pvp.attack(target);
-        } catch (err) {
-            console.log("Combat error/stopped:", err.message);
-        } finally {
-            this.isFighting = false;
-            this.bot.pvp.stop();
-        }
+        // Check friends list (if exists in memory)
+        // Future: this.botCore.memory.isFriend(username)
+        return false;
     }
 
-    async patrol() {
-        // If far from base and not fighting, return to base
-        const currentDist = this.bot.entity.position.distanceTo(this.basePos);
-        if (currentDist > 5) {
-            // Only move if we are significantly away
-            // And not doing something else (like task manager stuff)
-            // But Guard Mode usually overrides Idle.
+    engage(target) {
+        console.log(`[Guard] Engaging threat: ${target.name || target.username}`);
+        this.engageTarget = target;
+        this.bot.pvp.attack(target);
+    }
 
-            // Use pathfinder to go near base
-            try {
-                // Don't await forever, just start moving
-                // But primitives move is blocking.
-                // We should use a non-blocking move or just set goal?
-
-                await this.bot.pathfinder.goto(new GoalBlock(this.basePos.x, this.basePos.y, this.basePos.z));
-            } catch (e) {
-                // Ignore path errors
+    async checkHealth() {
+        if (this.bot.health < 10) {
+            // Try to eat via behaviors wrapper
+            // This relies on eat_until_full being available and properly locking action
+            // For tick loop, we might just want to trigger it once
+            if (this.bot.food < 20) {
+                // Simple consume attempt
+                const food = this.bot.inventory.items().find(i => i.name.includes('cooked') || i.name.includes('bread'));
+                if (food) {
+                    await this.bot.equip(food, 'hand');
+                    await this.bot.consume();
+                }
             }
         }
     }

@@ -102,12 +102,43 @@ class AIManager extends EventEmitter {
 
             this.pendingRequests.set(id, { resolve, reject, timeout });
 
-            this.worker.postMessage({
-                type: 'call',
-                data: { id, type, prompt, jsonMode }
-            });
+            const payload = { id, type, prompt, jsonMode };
+
+            try {
+                // Safety sanitization to prevent Circular Reference crashes
+                const safePayload = this._sanitizePayload(payload);
+
+                this.worker.postMessage({
+                    type: 'call',
+                    data: safePayload
+                });
+            } catch (err) {
+                this.pendingRequests.delete(id);
+                clearTimeout(timeout);
+                reject(new Error(`Worker Send Error: ${err.message}`));
+            }
         });
     }
+
+    _sanitizePayload(obj) {
+        return JSON.parse(JSON.stringify(obj, (key, value) => {
+            // Remove huge objects or circular refs if necessary
+            if (key === 'bot' || key === 'botCore') return undefined; // Should not happen in prompt/jsonMode, but safe to filter
+            return value;
+        }));
+    }
+
+    cancelRequest(id) {
+        if (this.pendingRequests.has(id)) {
+            const request = this.pendingRequests.get(id);
+            clearTimeout(request.timeout);
+            request.reject(new Error("Request Cancelled (Race Condition / Timeout)"));
+            this.pendingRequests.delete(id);
+            return true;
+        }
+        return false;
+    }
+
 
     async fast(prompt, jsonMode = false) {
         try {

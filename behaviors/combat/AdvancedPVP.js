@@ -9,6 +9,16 @@ class AdvancedPVP {
         this.botCore = botCore;
         this.isCritJumping = false;
         this.lastAttackTime = 0;
+        this.shieldDisabledUntil = 0;
+
+        // Auto-detect shield disable (Axe hit)
+        this.bot.on('entityStatus', (entity, status) => {
+            if (entity.id === this.bot.entity.id && status === 30) {
+                // Status 30 = Shield Disabled (approx 5 seconds / 100 ticks)
+                console.log("[PVP] 🛡️ Shield DISABLED by Axe!");
+                this.shieldDisabledUntil = Date.now() + 5000;
+            }
+        });
     }
 
     get bot() { return this.botCore.bot; }
@@ -34,15 +44,46 @@ class AdvancedPVP {
             return; // Too far to hit
         }
 
-        // Critical Hit Logic (Crit Jump)
+        // Critical Hit Logic (Crit Jump) with Physics Sync
         if (this.bot.entity.onGround && !this.isCritJumping && dist < 3) {
             this.isCritJumping = true;
             this.bot.setControlState('jump', true);
-            await new Promise(r => setTimeout(r, 250)); // Wait for apex
-            this.bot.setControlState('jump', false);
+
+            // Wait for "falling" state (velocity.y < -0.1) for critical hit
+            // This syncs with server ticks instead of real-time ms
+            this.waitForFall().then(() => {
+                this.bot.setControlState('jump', false);
+                this._performAttack(target, dist);
+            });
+            return;
         }
 
-        // Attack when falling (critical hit) or close enough
+        // Standard attack (if not jumping or already failing)
+        this._performAttack(target, dist);
+    }
+
+    // Helper: Wait until bot starts falling (indicating apex reached)
+    async waitForFall() {
+        return new Promise(resolve => {
+            const check = () => {
+                if (this.bot.entity.velocity.y < -0.05) { // Started falling
+                    this.bot.removeListener('physicsTick', check);
+                    resolve();
+                } else if (this.bot.entity.onGround) { // Landed early?
+                    this.bot.removeListener('physicsTick', check);
+                    resolve();
+                }
+            };
+            this.bot.on('physicsTick', check);
+            // Fallback timeout to prevent hanging listener
+            setTimeout(() => {
+                this.bot.removeListener('physicsTick', check);
+                resolve();
+            }, 1000);
+        });
+    }
+
+    async _performAttack(target, dist) {
         if (this.bot.entity.velocity.y < -0.1 || this.bot.entity.onGround || dist < 2) {
             const now = Date.now();
             // Sword attack cooldown (~600ms)
@@ -53,6 +94,7 @@ class AdvancedPVP {
 
                 // W-Tap Logic (Reset Knockback for more KB)
                 this.bot.setControlState('sprint', false);
+                // Use a quick tick-wait instead of pure sleep if possible, but sleep is okay for sprint reset
                 await new Promise(r => setTimeout(r, 50));
                 this.bot.setControlState('sprint', true);
             }
@@ -64,7 +106,12 @@ class AdvancedPVP {
         if (!target) return;
 
         // FIX 2: Check if shield is on cooldown (disabled by axe hit)
-        // When shield is disabled, bot.player or similar might indicate blocking cooldown
+        if (Date.now() < this.shieldDisabledUntil) {
+            // Shield is disabled, don't try to use it
+            this.bot.deactivateItem();
+            return;
+        }
+
         // For safety, check if we have a shield equipped and it's usable
         const offhand = this.bot.inventory.slots[45]; // Offhand slot
         const hasShield = offhand && offhand.name.includes('shield');
