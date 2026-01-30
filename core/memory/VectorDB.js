@@ -11,6 +11,7 @@ class VectorDB {
         // Local model pipeline
         this.embeddingPipeline = null;
 
+        this.saveTimer = null;
         this.load();
     }
 
@@ -103,10 +104,23 @@ class VectorDB {
     }
 
     save() {
-        const dir = path.dirname(this.dbPath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        // Debounce: Wait 10 seconds after last change
+        if (this.saveTimer) clearTimeout(this.saveTimer);
 
-        fs.writeFileSync(this.dbPath, JSON.stringify(this.vectors, null, 2));
+        this.saveTimer = setTimeout(() => {
+            try {
+                const dir = path.dirname(this.dbPath);
+                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+                // Async Write to prevent blocking event loop
+                fs.writeFile(this.dbPath, JSON.stringify(this.vectors, null, 2), (err) => {
+                    if (err) console.error("[VectorDB] ❌ Save Error:", err);
+                    else console.log("[VectorDB] ✅ Memory saved (Auto-save).");
+                });
+            } catch (e) {
+                console.error("[VectorDB] Save Prep Error:", e);
+            }
+        }, 10000);
     }
 
     load() {

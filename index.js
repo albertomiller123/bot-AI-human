@@ -1,6 +1,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const BotCore = require('./bot-core');
+const VectorDB = require('./core/memory/VectorDB');
 
 // ===================================
 // GLOBAL ERROR HANDLERS
@@ -119,6 +120,17 @@ try {
 
 // Start Bot
 try {
+    console.log("🔄 System Startup...");
+
+    // 1. Pre-load AI Model (Prevents freeze on join)
+    // Note: We create a temporary instance just to trigger the static/global load?
+    // Or we pass this instance to BotCore?
+    // For now, let's just trigger the static pipeline load if possible, OR
+    // Just instantiate one to warm up the cache.
+    const dummyDB = new VectorDB(null);
+    await dummyDB.init();
+    console.log("🧠 Artificial Intelligence Model Ready!");
+
     console.log("Creating BotCore...");
     botInstance = new BotCore(config);
     console.log("BotCore created. Starting...");

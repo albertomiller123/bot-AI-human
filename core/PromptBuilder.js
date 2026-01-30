@@ -34,7 +34,13 @@ class PromptBuilder {
             prompt += `<current_state>\n${this._formatState(this.state)}\n</current_state>\n\n`;
         }
 
-        if (this.memory) {
+        if (this.state.memories && Array.isArray(this.state.memories)) {
+            const memoryString = this.state.memories
+                .slice(0, 5) // Critical Optimization: Limit to 5
+                .map(m => `- ${m.text} (${Math.round(m.score * 100)}%)`)
+                .join('\n');
+            prompt += `<context_memory>\n${memoryString}\n</context_memory>\n\n`;
+        } else if (this.memory) {
             prompt += `<context_memory>\n${this.memory}\n</context_memory>\n\n`;
         }
 

@@ -15,6 +15,7 @@ class AgentOrchestrator {
         // But for now, we assume this is called AFTER botCore init
         // We'll lazy init memory
         this.ltm = null;
+        this.isProcessing = false; // Prevents race conditions
     }
 
     async init() {
@@ -29,39 +30,59 @@ class AgentOrchestrator {
      * Main Thinking Loop
      */
     async process(username, message, context, visualContext) {
-        // 1. Memory Retrieval (RAG)
-        const relevantMemories = this.ltm ? await this.ltm.search(message, 3) : [];
-        const memoryContext = relevantMemories.map(m => m.text).join("\n");
-        console.log(`[Orchestrator] Retrieved memories: ${relevantMemories.length}`);
+        if (this.isProcessing) return;
 
-        // 2. Strategic Planning (CEO)
-        // Inject memory into context
-        const enhancedContext = { ...context, memory: memoryContext };
-        const highLevelSteps = await this.strategic.think(enhancedContext, visualContext, message);
-
-        if (!highLevelSteps || highLevelSteps.length === 0) {
-            return { type: 'chat', content: "I'm not sure how to do that." };
-        }
-
-        console.log(`[Orchestrator] Plan:`, highLevelSteps);
-
-        // 3. Tactical Execution (Manager)
-        const actions = [];
-        for (const step of highLevelSteps) {
-            const action = await this.tactical.planExecution(step, enhancedContext);
-            if (action) {
-                actions.push(action);
-            } else {
-                console.warn(`[Orchestrator] Failed to execute step: ${step}`);
+        // Safety Timeout: Reset if stuck
+        const processTimeout = setTimeout(() => {
+            if (this.isProcessing) {
+                console.warn("[Orchestrator] ⚠️ Thinking timeout (30s). Resetting state.");
+                this.isProcessing = false;
             }
-        }
+        }, 30000);
 
-        // 4. Save to Memory
-        if (this.ltm) {
-            this.ltm.add(`Goal: ${message}. Plan: ${JSON.stringify(highLevelSteps)}`, { user: username });
-        }
+        this.isProcessing = true;
 
-        return { type: 'strategy', steps: actions };
+        try {
+            // 1. Memory Retrieval (RAG)
+            const relevantMemories = this.ltm ? await this.ltm.search(message, 3) : [];
+            const memoryContext = relevantMemories.map(m => m.text).join("\n");
+            console.log(`[Orchestrator] Retrieved memories: ${relevantMemories.length}`);
+
+            // 2. Strategic Planning (CEO)
+            const enhancedContext = { ...context, memory: memoryContext };
+            const highLevelSteps = await this.strategic.think(enhancedContext, visualContext, message);
+
+            if (!highLevelSteps || highLevelSteps.length === 0) {
+                return { type: 'chat', content: "I'm not sure how to do that." };
+            }
+
+            console.log(`[Orchestrator] Plan:`, highLevelSteps);
+
+            // 3. Tactical Execution (Manager)
+            const actions = [];
+            for (const step of highLevelSteps) {
+                const action = await this.tactical.planExecution(step, enhancedContext);
+                if (action) {
+                    actions.push(action);
+                } else {
+                    console.warn(`[Orchestrator] Failed to execute step: ${step}`);
+                }
+            }
+
+            // 4. Save to Memory
+            if (this.ltm) {
+                this.ltm.add(`Goal: ${message}. Plan: ${JSON.stringify(highLevelSteps)}`, { user: username });
+            }
+
+            return { type: 'strategy', steps: actions };
+
+        } catch (error) {
+            console.error("[Orchestrator] ❌ Error processing:", error);
+            return { type: 'chat', content: "My brain hurts..." };
+        } finally {
+            clearTimeout(processTimeout);
+            this.isProcessing = false;
+        }
     }
 
     async gatherPerception() {
