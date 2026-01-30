@@ -20,7 +20,8 @@ class AILayer {
         this.contextManager = new ContextManager(botCore);
 
         // Phase 12: Dual-Brain Infrastructure
-        this.brain = new AIManager(botCore);
+        // Use injected AIManager if available, otherwise fallback (legacy support)
+        this.brain = botCore.aiManager || new AIManager(botCore);
 
         // CRITICAL FIX: Initialize Router and Reflex sub-agents
         // Initialize Router and Reflex sub-agents using the Brain (worker proxy)

@@ -36,9 +36,21 @@ class TacticalAgent {
     }
 
     async planExecution(instruction, context) {
-        // Enqueue new task
-        this.taskQueue.push({ step: instruction, status: 'pending' });
-        this.saveState();
+        // 1. Queue Management
+        // Check if this instruction is already active (resume after crash)
+        let activeTask = this.taskQueue[0];
+
+        if (!activeTask || activeTask.step !== instruction) {
+            // New Task
+            activeTask = {
+                step: instruction,
+                status: 'pending',
+                retries: 0,
+                timestamp: Date.now()
+            };
+            this.taskQueue.push(activeTask);
+            this.saveState();
+        }
 
         const tools = getToolsForLLM();
         const toolNames = tools.map(t => t.function.name).join(', ');
@@ -55,22 +67,43 @@ Output format: {"action": "name", "params": {...}}
 `;
 
         try {
-            // Task complete (Assume success for now)
-            // In a real loop, we would clear this AFTER action execution validation
-            this.taskQueue.shift();
-            this.saveState();
-
+            // 2. Execution (AI Translation)
             const response = await this.ai.fast(prompt, true);
             const action = this._parseJSON(response);
 
+            // 3. Validation
             if (action && action.action) {
                 const validation = validateActionCall(action.action, action.params || {});
-                if (validation.valid) return action;
-                console.warn(`[Tactical] Validation failed: ${validation.error}`);
+
+                if (validation.valid) {
+                    // Success!
+                    console.log(`[Tactical] ✅ Action Generated: ${action.action}`);
+                    this.taskQueue.shift(); // Remove from queue
+                    this.saveState();
+                    return action;
+                } else {
+                    console.warn(`[Tactical] Validation failed: ${validation.error}`);
+                    // Fallthrough to retry
+                }
             }
+
+            // 4. Failure Handling
+            activeTask.retries = (activeTask.retries || 0) + 1;
+            console.warn(`[Tactical] ⚠️ Task Failed (Attempt ${activeTask.retries}/3)`);
+
+            if (activeTask.retries >= 3) {
+                console.error("[Tactical] ❌ Max retries reached. Dropping task.");
+                this.taskQueue.shift();
+                this.saveState();
+            } else {
+                this.saveState();
+            }
+
             return null;
+
         } catch (e) {
             console.error("[Tactical] Error:", e);
+            // Non-destructive error (network, etc) - Keep in queue
             return null;
         }
     }

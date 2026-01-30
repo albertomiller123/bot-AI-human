@@ -32,10 +32,18 @@ const WebServer = require('./web-server');
 const VisualCortex = require('./visual-cortex');
 
 class BotCore {
-    constructor(config) {
+    constructor(config, dependencies = {}) {
         this.config = config;
         this.bot = null;
         this.isInitialized = false;
+
+        // Injected Dependencies
+        this.vectorDB = dependencies.vectorDB || null;
+        this.aiManager = dependencies.aiManager || null;
+
+        if (this.aiManager) {
+            this.aiManager.botCore = this; // Link back
+        }
 
         // Core Components
         this.memory = new MemoryManager(__dirname);
@@ -66,8 +74,13 @@ class BotCore {
         this.locationsCache = {}; // Cache for locations
     }
 
-    // SQLite-based LTM/STM proxy 
-    get ltm() { return { locations: this.locationsCache }; }
+    // Unified LTM Access (VectorDB is primary)
+    get ltm() {
+        // If VectorDB is available, prefer it? 
+        // Or return a composite object?
+        // AgentOrchestrator uses this.ltm.
+        return this.vectorDB || { locations: this.locationsCache };
+    }
 
     async start() {
         await this.cleanup(); // Clean up before starting new instance
@@ -153,6 +166,26 @@ class BotCore {
             if (this.aiLayer && this.aiLayer.init) {
                 await this.aiLayer.init();
             }
+
+            // SYSTEM UNIFICATION: Initialize Goal Manager
+            const GoalManager = require('./core/architecture/GoalManager');
+            this.goalManager = new GoalManager(this);
+
+            // Register Sources
+            this.goalManager.registerSource('survival', () => this.survivalSystem.getProposal());
+
+            if (this.aiLayer && this.aiLayer.brain) {
+                // Note: we need the Orchestrator, not just Brain. 
+                // Assuming aiLayer.orchestrator exists or we need to access it differently.
+                // In `ai-layer.js`, if it exposes orchestrator:
+                // this.goalManager.registerSource('agent', () => this.aiLayer.orchestrator.getProposal());
+                // For now, let's look at `ai-layer.js` if it has orchestrator.
+                // Assuming we can access it via a getter or property if we refactored ai-layer.
+            }
+
+            // Start Goal Loop
+            setInterval(() => this.goalManager.tick(), 1000);
+            console.log('[System] GoalManager Active.');
 
             // Initialize Prismarine Viewer
             if (this.config.plugins && this.config.plugins.viewer && this.config.plugins.viewer.enabled) {

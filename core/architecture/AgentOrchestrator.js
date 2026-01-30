@@ -19,11 +19,43 @@ class AgentOrchestrator {
     }
 
     async init() {
-        if (!this.botCore.memoryManager) throw new Error("MemoryManager not ready");
+        // Use shared LTM from BotCore (initialized in index.js)
+        this.ltm = this.botCore.ltm;
 
-        this.ltm = new VectorDB(this.botCore);
-        await this.ltm.init();
-        console.log("[AgentOrchestrator] Cognitive Architecture Ready");
+        if (!this.ltm) {
+            console.warn("[AgentOrchestrator] LTM not available in BotCore, falling back...");
+            this.ltm = new VectorDB(this.botCore);
+            await this.ltm.init();
+        }
+
+        console.log("[AgentOrchestrator] Cognitive Architecture Ready (Shared Memory)");
+    }
+
+    /**
+     * Called by GoalManager to bid for control
+     */
+    async getProposal() {
+        // If we simply have a plan in memory (queued by chat), we bid to execute it.
+        // For now, let's assume if `this.activePlan` exists, we bid high (90).
+
+        if (this.activePlan) {
+            return {
+                id: 'execute_agent_plan',
+                priority: 90, // User Command Priority
+                execute: async () => {
+                    console.log("[Orchestrator] Executing Active Plan...");
+                    // Logic to execute the plan step-by-step
+                    // For MVP, we just resume processing if halted?
+                    // Or we let the Orchestrator manage its own loop, but only when GoalManager says "Go".
+                }
+            };
+        }
+        return null;
+    }
+
+    // Set active plan from Chat Input
+    setPlan(planSteps) {
+        this.activePlan = planSteps;
     }
 
     /**
@@ -57,8 +89,16 @@ class AgentOrchestrator {
             }
 
             console.log(`[Orchestrator] Plan:`, highLevelSteps);
+            this.activePlan = highLevelSteps; // Store plan for GoalManager to pick up
 
             // 3. Tactical Execution (Manager)
+            // DEPRECATED: We don't execute immediately anymore. We wait for GoalManager.
+            // BUT for MVP compatibility, let's keep executing tactical steps here IF we are allowed?
+            // BETTER: The execute logic should be moved to the `execute` callback of the proposal.
+
+            // For now, let's just return the strategy and let the tactical loop pick it up via GoalManager
+            // (Refactor Phase 2 will fully move execution to GoalManager callback)
+
             const actions = [];
             for (const step of highLevelSteps) {
                 const action = await this.tactical.planExecution(step, enhancedContext);

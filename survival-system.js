@@ -181,62 +181,77 @@ class SurvivalSystem {
 
     async tick() {
         if (!this.botCore.isInitialized) return;
-
-        // CRITICAL FIX: Don't interfere if TaskManager is executing a user command
-        if (this.botCore.taskManager && this.botCore.taskManager.isBusy) return;
-
+        // SurvivalSystem no longer auto-executes. It waits for GoalManager.
+        // But we still run background checks (like auto-totem or combat reflexes)
         await this.checkSurvival();
         await this.combatMovement();
     }
 
-    async checkSurvival() {
-        const health = this.bot.health;
-        const offhand = this.bot.inventory.slots[45];
-        const cfg = this.config.survival;
+    /**
+     * Called by GoalManager to bid for control
+     */
+    async getProposal() {
+        // 1. Ask GoalArbitrator (The Biological Brain)
+        const goalId = this.brain.evaluate(); // Returns 'critical_foraging', 'survival_health', 'idle', etc.
 
-        // Auto-Totem / Shield logic (Delegated to AdvancedPVP)
-        if (this.pvp) {
-            await this.pvp.autoTotem(cfg.autoTotemHealth, cfg.criticalHealth);
-        }
-    }
+        let priority = 0;
+        let executeFn = null;
 
-    async combatMovement() {
-        const entities = Object.values(this.bot.entities);
-        const dangerousEntity = entities.find(e => {
-            if (e.type !== 'player' && e.type !== 'hostile') return false;
-            const dist = e.position.distanceTo(this.bot.entity.position);
-            return dist <= this.config.combat.engageDistance;
-        });
-
-        if (dangerousEntity) {
-            // PHASE 7: Advanced PVP Tech
-            await this.pvp.attack(dangerousEntity);
-            await this.pvp.smartShield(dangerousEntity);
-        }
-    }
-
-    executeGoal(goalId) {
         switch (goalId) {
             case 'critical_foraging':
-                console.log("[Survival] Critical Foraging Initiated (Starvation Mode)");
-                this.gatherer.findFood();
-                break;
-            case 'survival_food':
-                this.gatherer.findFood();
+                priority = 100; // Critical
+                executeFn = () => {
+                    console.log("[Survival] Executing Critical Foraging");
+                    this.gatherer.findFood();
+                };
                 break;
             case 'survival_health':
+                priority = 95;
+                executeFn = () => console.log("[Survival] Seeking Safety/Health"); // TODO: Implement Shelter
+                break;
+            case 'survival_food':
+                priority = 90;
+                executeFn = () => this.gatherer.findFood();
+                break;
+            case 'daily_agenda':
+                priority = 80; // High but overrideable by user
+                executeFn = () => this.executeAgenda(this.brain.getDailyAgenda());
                 break;
             case 'progression_iron':
-                this.miner.mineLevel(this.config.mining.ironLevel);
+                priority = 50;
+                executeFn = () => this.miner.mineLevel(this.config.mining.ironLevel);
                 break;
             case 'progression_diamond':
-                this.miner.mineLevel(this.config.mining.stripMineLevel);
+                priority = 40;
+                executeFn = () => this.miner.mineLevel(this.config.mining.stripMineLevel);
                 break;
             case 'progression_nether':
-                this.nether.findFortress();
+                priority = 30;
+                executeFn = () => this.nether.findFortress();
                 break;
+            default:
+                priority = 0;
+                executeFn = () => { }; // Idle
         }
+
+        if (priority > 0) {
+            return {
+                id: goalId,
+                priority: priority,
+                execute: executeFn
+            };
+        }
+        return null; // No bid
     }
+
+    executeAgenda(task) {
+        console.log(`[Survival] Executing Agenda: ${task}`);
+        // Basic mapping
+        if (task.includes('mining')) this.miner.mineLevel(11);
+        if (task.includes('farming')) console.log("Farming not implied yet");
+    }
+
+    // executeGoal(goalId) ... Deprecated by executeFn in proposal ...
 }
 
 module.exports = SurvivalSystem;
