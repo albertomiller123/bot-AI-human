@@ -58,7 +58,27 @@ class BotCore {
         this.idleBehavior = new IdleBehavior(this);
 
         this.taskManager = new TaskManager(this);
+        this.taskManager = new TaskManager(this);
         this.aiLayer = new AILayer(this);
+
+        // Phase 9: God Mode Survival
+        const ConsumableManager = require('./core/survival/ConsumableManager');
+        this.consumableManager = new ConsumableManager(this);
+
+        const PhysicsManager = require('./core/physics/PhysicsManager');
+        this.physicsManager = new PhysicsManager(this);
+
+        const CrystalCombat = require('./core/combat/CrystalCombat');
+        this.crystalCombat = new CrystalCombat(this);
+
+        const ItemEvaluator = require('./core/brain/ItemEvaluator');
+        this.itemEvaluator = new ItemEvaluator(this);
+
+        const BlacksmithManager = require('./core/crafting/BlacksmithManager');
+        this.blacksmithManager = new BlacksmithManager(this);
+
+        const StrategyBrain = require('./core/brain/StrategyBrain');
+        this.strategyBrain = new StrategyBrain(this);
 
         // Deprecated
         this.webServer = new WebServer(this, 3000);
@@ -136,6 +156,12 @@ class BotCore {
         if (this.aiManager) {
             await this.aiManager.cleanup();
         }
+        if (this.consumableManager) {
+            this.consumableManager.stop();
+        }
+        if (this.physicsManager) {
+            this.physicsManager.stop();
+        }
 
         if (!this.bot) return;
         console.log("[BotCore] Cleaning up previous bot instance...");
@@ -168,6 +194,10 @@ class BotCore {
             // Initialize Vision System
             await this.visualCortex.init();
 
+            // Phase 9: Start Consumable Manager & Physics
+            this.consumableManager.start();
+            this.physicsManager.start();
+
             // Phase 2: Initialize Agent Orchestrator (Cognitive Architecture)
             if (this.aiLayer && this.aiLayer.init) {
                 await this.aiLayer.init();
@@ -179,6 +209,11 @@ class BotCore {
 
             // Register Sources
             this.goalManager.registerSource('survival', () => this.survivalSystem.getProposal());
+
+            // Phase 5: Strategy Brain (High Priority)
+            if (this.strategyBrain) {
+                this.goalManager.registerSource('strategy', () => this.strategyBrain.getProposal());
+            }
 
             if (this.aiLayer && this.aiLayer.brain) {
                 // Note: we need the Orchestrator, not just Brain. 
