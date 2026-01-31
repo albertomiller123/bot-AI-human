@@ -74,10 +74,14 @@ class PromptBuilder {
                     formattedValue = JSON.stringify(value);
                 }
 
-                // Truncate Long Strings
+                // Truncate Long Strings (Smart: Keep HEAD and TAIL, cut MIDDLE)
+                // Fix for Issue #12 (Logic)
                 const strValue = String(formattedValue);
                 if (strValue.length > 2000) {
-                    return `${key}: ${strValue.substring(0, 2000)}... [TRUNCATED ${strValue.length - 2000} chars]`;
+                    const keep = 800;
+                    const head = strValue.substring(0, keep);
+                    const tail = strValue.substring(strValue.length - keep);
+                    return `${key}: ${head}\n... [TRUNCATED ${strValue.length - 2000} chars] ...\n${tail}`;
                 }
 
                 return `${key}: ${strValue}`;

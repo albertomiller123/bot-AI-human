@@ -48,17 +48,18 @@ class AdvancedPVP {
 
         const dist = this.bot.entity.position.distanceTo(target.position);
 
-        // FIX 1: Look at target's HEAD based on their actual height
-        // target.height * 0.85 = approximate head/neck position for any mob
-        // This works for Spiders (0.9m), Baby Zombies (0.975m), Crouching players, etc.
-        const targetHead = target.position.offset(0, (target.height || 1.8) * 0.85, 0);
+        // FIX 3: Auto-Eat during combat (Survival Priority)
+        await this.checkHealth();
+
+        // FIX 4: Optimize Reach (3.0) and Eye Height
+        const targetHead = target.position.offset(0, target.height || 1.62, 0);
         await this.bot.lookAt(targetHead);
 
-        if (dist > 3.5) {
+        if (dist > 3.0) { // Reduced from 3.5 to 3.0 (Survival reach)
             this.bot.setControlState('sprint', true);
             this.bot.setControlState('forward', true);
             if (this.bot.entity.isCollidedHorizontally) this.bot.setControlState('jump', true);
-            return; // Too far to hit
+            return;
         }
 
         // Critical Hit Logic (Crit Jump) with Physics Sync
@@ -191,6 +192,18 @@ class AdvancedPVP {
         if (health > healthThreshold && shield && offhand?.name !== 'shield') {
             if (Date.now() > this.shieldDisabledUntil) {
                 await this.bot.equip(shield, 'off-hand');
+            }
+        }
+    }
+
+    async checkHealth() {
+        if (this.bot.health < 10 && this.bot.food < 20) {
+            const food = this.bot.inventory.items().find(i => i.name.includes('cooked') || i.name.includes('bread'));
+            if (food) {
+                this.bot.deactivateItem(); // Lower shield to eat
+                await this.bot.equip(food, 'hand');
+                await this.bot.consume();
+                await this.equipBestWeapon(); // Switch back
             }
         }
     }

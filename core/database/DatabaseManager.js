@@ -10,6 +10,10 @@ class DatabaseManager {
 
         this.dbPath = path.join(process.cwd(), 'data', 'bot_memory.db');
         this.ensureDataDir();
+
+        // Audit Fix #5: Auto-Backup on Startup
+        this.backupDB();
+
         this.db = new sqlite3.Database(this.dbPath, (err) => {
             if (err) {
                 console.error('[DatabaseManager] Could not connect to database', err);
@@ -20,6 +24,34 @@ class DatabaseManager {
         });
 
         DatabaseManager.instance = this;
+    }
+
+    backupDB() {
+        if (!fs.existsSync(this.dbPath)) return;
+
+        try {
+            const backupDir = path.join(path.dirname(this.dbPath), 'backups');
+            if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const backupPath = path.join(backupDir, `bot_memory_${timestamp}.db`);
+
+            fs.copyFileSync(this.dbPath, backupPath);
+            console.log(`[DatabaseManager] 💾 Backup created: ${path.basename(backupPath)}`);
+
+            // Cleanup old backups (Keep last 5)
+            const files = fs.readdirSync(backupDir)
+                .filter(f => f.startsWith('bot_memory_') && f.endsWith('.db'))
+                .sort(); // Oldest first
+
+            while (files.length > 5) {
+                const toDelete = files.shift();
+                fs.unlinkSync(path.join(backupDir, toDelete));
+                console.log(`[DatabaseManager] 🗑️ Removed old backup: ${toDelete}`);
+            }
+        } catch (e) {
+            console.error("[DatabaseManager] Backup failed:", e.message);
+        }
     }
 
     ensureDataDir() {

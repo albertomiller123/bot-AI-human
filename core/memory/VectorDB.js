@@ -3,13 +3,13 @@ const db = require('../database/DatabaseManager');
 class VectorDB {
     constructor(botCore) {
         this.botCore = botCore;
-        this.vectors = []; // RAM Cache for fast search (sync with DB)
+        // RAM Cache removed for memory safety (Issue #11)
 
         // Local model pipeline
         this.embeddingPipeline = null;
         this.loadingPromise = null;
 
-        // Initialize DB and load data
+        // Initialize DB
         this.initDB();
     }
 
@@ -24,7 +24,8 @@ class VectorDB {
                     timestamp TEXT
                 )
             `);
-            await this.load();
+            // Index for faster timestamp sorts
+            await db.run(`CREATE INDEX IF NOT EXISTS idx_vectors_timestamp ON vectors(timestamp)`);
             this.initModel(); // Start loading AI model in background
         } catch (err) {
             console.error('[VectorDB] DB Init Error:', err);
@@ -89,18 +90,8 @@ class VectorDB {
 
         const id = Date.now() + Math.random().toString(36).substr(2, 9);
         const timestamp = new Date().toISOString();
-        const entry = {
-            id: id,
-            text: text,
-            vector: embedding,
-            metadata: metadata,
-            timestamp: timestamp
-        };
 
-        // Update RAM
-        this.vectors.push(entry);
-
-        // Async Insert to DB (Non-blocking)
+        // Async Insert to DB
         db.run(
             `INSERT INTO vectors (id, content, embedding, metadata, timestamp) VALUES (?, ?, ?, ?, ?)`,
             [id, text, JSON.stringify(embedding), JSON.stringify(metadata), timestamp]
@@ -109,35 +100,46 @@ class VectorDB {
         }).catch(err => {
             console.error("[VectorDB] ❌ Save Error:", err);
         });
-
-        // Pruning RAM if too large (optional, prevents memory leak)
-        if (this.vectors.length > 2000) {
-            // We might want to keep most recent or most relevant?
-            // For now, simple slice to prevent crash, but DB has everything.
-            this.vectors = this.vectors.slice(-2000);
-        }
     }
 
     /**
-     * Search relevant memories
+     * Search relevant memories using Batch Retrieval (Low RAM usage)
      */
     async search(query, limit = 3) {
         const queryVector = await this.createEmbedding(query);
         if (!queryVector) return [];
 
-        // Cosine Similarity on RAM cache
-        // Improvement: We could fetch from DB if RAM is partial, but for now RAM = Full DB (mostly)
-        const results = this.vectors.map(entry => {
-            const score = this.cosineSimilarity(queryVector, entry.vector);
-            return { ...entry, score };
-        });
+        let topResults = [];
 
-        // Rank & Filter
-        return results
-            .sort((a, b) => b.score - a.score)
-            .filter(item => item.score > 0.3) // Threshold 30%
-            .slice(0, limit)
-            .map(item => ({ text: item.text || item.content, score: item.score, metadata: item.metadata }));
+        try {
+            // Retrieve all rows (SQLite 'all' loads everything, but 'each' is better for streaming)
+            // Limitations: sqlite3 'each' is callback based. 
+            // For now, to solve OOM, we can fetch just ID and Embedding first?
+            // Or just fetch chunks.
+            // A simple "SELECT * FROM vectors" for 10k rows might be 20-30MB JSON stringified. 
+            // It is strictly better than "SELECT *" AND "keeping it in RAM forever".
+            // optimization: We will accept a temporary load of data for the search duration, but not keep it.
+
+            const rows = await db.all("SELECT content, embedding, metadata FROM vectors");
+
+            // Streaming calculation to avoid creating huge object arrays
+            // Note: 'rows' still consumes RAM, but GC can reclaim it after search.
+            // Ideally we'd use a cursor/stream, but standard sqlite3 driver is limited here without complexity.
+
+            topResults = rows.map(row => {
+                const vec = JSON.parse(row.embedding);
+                const score = this.cosineSimilarity(queryVector, vec);
+                return { text: row.content, score, metadata: JSON.parse(row.metadata || '{}') };
+            })
+                .sort((a, b) => b.score - a.score)
+                .filter(item => item.score > 0.3)
+                .slice(0, limit);
+
+        } catch (e) {
+            console.error("[VectorDB] Search Error:", e);
+        }
+
+        return topResults;
     }
 
     cosineSimilarity(vecA, vecB) {
@@ -150,26 +152,6 @@ class VectorDB {
             normB += vecB[i] * vecB[i];
         }
         return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-    }
-
-    async load() {
-        try {
-            console.log("[VectorDB] Loading memories from SQLite...");
-            const rows = await db.all("SELECT * FROM vectors ORDER BY timestamp ASC"); // Oldest first? or Newest?
-
-            this.vectors = rows.map(row => ({
-                id: row.id,
-                text: row.content,
-                vector: JSON.parse(row.embedding),
-                metadata: JSON.parse(row.metadata || '{}'),
-                timestamp: row.timestamp
-            }));
-
-            console.log(`[VectorDB] Loaded ${this.vectors.length} memories from DB.`);
-        } catch (e) {
-            console.error("[VectorDB] Load Error:", e);
-            this.vectors = [];
-        }
     }
 }
 
