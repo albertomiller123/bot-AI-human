@@ -58,8 +58,11 @@ class TrashFilter {
                     // Drop this item stack
                     // Update count
                     try {
+                        // FIX: Look down to avoid auto-pickup
+                        await this.bot.look(this.bot.entity.yaw, -Math.PI / 2, true);
+
                         await this.bot.tossStack(item);
-                        console.log(`[TrashFilter] Tossed ${item.name} x${item.count}`);
+                        console.log(`[TrashFilter] Tossed ${item.name} x${item.count}`); // item is slot, might need refetch
                         counts[item.name] -= item.count;
                         await new Promise(r => setTimeout(r, 600)); // Delay to prevent server spam kick
                     } catch (e) {

@@ -57,7 +57,7 @@ class AdvancedPVP {
         const targetHead = target.position.offset(0, target.height || 1.62, 0);
         await this.bot.lookAt(targetHead);
 
-        if (dist > 3.0) { // Reduced from 3.5 to 3.0 (Survival reach)
+        if (dist > 2.8) { // Reduced from 3.5 to 2.8 (Survival reach)
             this.bot.setControlState('sprint', true);
             this.bot.setControlState('forward', true);
             if (this.bot.entity.isCollidedHorizontally) this.bot.setControlState('jump', true);

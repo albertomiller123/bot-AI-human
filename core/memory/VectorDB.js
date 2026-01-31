@@ -17,24 +17,7 @@ class VectorDB {
 
     // ... (skip unchanged methods)
 
-    async initDB() {
-        try {
-            await db.run(`
-                CREATE TABLE IF NOT EXISTS vectors (
-                    id TEXT PRIMARY KEY,
-                    content TEXT,
-                    embedding BLOB,
-                    metadata TEXT,
-                    timestamp TEXT
-                )
-            `);
-            // Index for faster timestamp sorts
-            await db.run(`CREATE INDEX IF NOT EXISTS idx_vectors_timestamp ON vectors(timestamp)`);
-            this.initModel(); // Start loading AI model in background
-        } catch (err) {
-            console.error('[VectorDB] DB Init Error:', err);
-        }
-    }
+
 
     /**
      * Init AI Model (Lazy Load with Race Condition Safety)
@@ -88,21 +71,56 @@ class VectorDB {
     /**
      * Add new memory (Race Condition Fixed)
      */
+    async initDB() {
+        try {
+            await db.run(`
+                CREATE TABLE IF NOT EXISTS vectors (
+                    id TEXT PRIMARY KEY,
+                    content TEXT,
+                    embedding BLOB,
+                    metadata TEXT,
+                    timestamp TEXT
+                )
+            `);
+            // Index for faster timestamp sorts
+            await db.run(`CREATE INDEX IF NOT EXISTS idx_vectors_timestamp ON vectors(timestamp)`);
+
+            // HYBRID CACHE: Load Embeddings + Metadata into RAM (No Content)
+            console.log("[VectorDB] ⏳ Hydrating Memory Index (IDs & Embeddings only)...");
+            const rows = await db.all("SELECT id, embedding, metadata FROM vectors");
+            this.vectors = rows.map(row => ({
+                id: row.id,
+                embedding: JSON.parse(row.embedding),
+                metadata: JSON.parse(row.metadata || '{}')
+            }));
+            console.log(`[VectorDB] ✅ Memory Index Ready: ${this.vectors.length} items loaded.`);
+
+            this.initModel(); // Start loading AI model in background
+        } catch (err) {
+            console.error('[VectorDB] DB Init Error:', err);
+        }
+    }
+
+    /**
+     * Add new memory (Race Condition Fixed + Hybrid Cache)
+     */
     async add(text, metadata = {}) {
         const embedding = await this.createEmbedding(text);
         if (!embedding) return;
 
-        const id = require('uuid').v4(); // Ensure uuid is used
+        const id = require('uuid').v4();
         const timestamp = new Date().toISOString();
-        const entry = { id, content: text, embedding, metadata, timestamp };
+
+        // RAM Entry: No Content
+        const indexEntry = { id, embedding, metadata };
 
         try {
             await db.run(
                 `INSERT INTO vectors (id, content, embedding, metadata, timestamp) VALUES (?, ?, ?, ?, ?)`,
                 [id, text, JSON.stringify(embedding), JSON.stringify(metadata), timestamp]
             );
-            // Only push to RAM when DB success
-            if (this.vectors) this.vectors.push(entry);
+            // Only push Index to RAM
+            this.vectors.push(indexEntry);
             console.log(`[VectorDB] 🧠 Remembered: "${text.substring(0, 30)}..."`);
         } catch (err) {
             console.error("[VectorDB] ❌ Save Error:", err);
@@ -110,41 +128,47 @@ class VectorDB {
     }
 
     /**
-     * Search relevant memories using Batch Retrieval (Low RAM usage)
+     * Search relevant memories using Hybrid Search (RAM Vector Scan -> Disk Content Fetch)
      */
     async search(query, limit = 3) {
         const queryVector = await this.createEmbedding(query);
         if (!queryVector) return [];
 
-        let topResults = []; // Keep only top K results
-
         try {
-            // Streaming Scan: Read 1 row -> Compute Logic -> Keep/Discard -> GC
-            // This ensures we never hold the full DB in memory.
+            // 1. In-Memory Vector Scan (Fast)
+            const scores = this.vectors.map(vec => ({
+                id: vec.id,
+                score: this.cosineSimilarity(queryVector, vec.embedding),
+                metadata: vec.metadata
+            }));
 
-            await db.each("SELECT content, embedding, metadata FROM vectors", [], (err, row) => {
-                if (err) return;
+            // 2. Sort and Top K
+            // Filter low relevance first (> 0.3)
+            const topResults = scores
+                .filter(item => item.score > 0.3)
+                .sort((a, b) => b.score - a.score)
+                .slice(0, limit);
 
-                const vec = JSON.parse(row.embedding);
-                const score = this.cosineSimilarity(queryVector, vec);
+            if (topResults.length === 0) return [];
 
-                if (score > 0.3) {
-                    const item = { text: row.content, score, metadata: JSON.parse(row.metadata || '{}') };
+            // 3. Fetch Content from Disk (Low RAM usage)
+            const ids = topResults.map(r => `'${r.id}'`).join(',');
+            const rows = await db.all(`SELECT id, content FROM vectors WHERE id IN (${ids})`);
 
-                    // Simple Insertion Sort / Keep top K
-                    topResults.push(item);
-                    topResults.sort((a, b) => b.score - a.score);
-                    if (topResults.length > limit) {
-                        topResults.pop(); // Remove worst
-                    }
-                }
+            // 4. Merge Results
+            return topResults.map(res => {
+                const row = rows.find(r => r.id === res.id);
+                return {
+                    text: row ? row.content : "[MISSING DATA]",
+                    score: res.score,
+                    metadata: res.metadata
+                };
             });
 
         } catch (e) {
             console.error("[VectorDB] Search Error:", e);
+            return [];
         }
-
-        return topResults;
     }
 
     cosineSimilarity(vecA, vecB) {
