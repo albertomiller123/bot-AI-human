@@ -90,6 +90,10 @@ class Primitives {
         this.bot.clearControlStates();
     }
 
+    async stop_actions() {
+        await this.stop();
+    }
+
     async place_block(block, position, face) {
         const targetPos = new Vec3(position.x, position.y, position.z);
 

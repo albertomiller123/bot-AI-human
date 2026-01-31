@@ -27,9 +27,36 @@ class CombatModule {
         );
         if (!target) throw new Error(`Target '${target_name}' not found nearby.`);
 
-        if (this.bot.pvp.target) this.bot.pvp.stop();
-        this.bot.pvp.attack(target);
-        console.log(`[CombatModule] Attacking ${target_name}!`);
+        // 1. Tactical Retreat (Health Check)
+        if (this.bot.health < 6) {
+            console.log("[Combat] Low health! Retreating...");
+            this.bot.pvp.stop();
+            const retreatPos = this.bot.entity.position.minus(target.position.minus(this.bot.entity.position).normalize().scaled(10));
+            await this.primitives.move_to(retreatPos);
+            return;
+        }
+
+        // 2. Ranged Combat (Bow Check)
+        const dist = this.bot.entity.position.distanceTo(target.position);
+        const bow = this.bot.inventory.items().find(i => i.name === 'bow');
+        const arrow = this.bot.inventory.items().find(i => i.name === 'arrow');
+
+        if (dist > 8 && bow && arrow) {
+            console.log("[Combat] Engaging with Bow 🏹");
+            this.bot.pvp.stop();
+            await this.bot.equip(bow, 'hand');
+            await this.bot.lookAt(target.position.offset(0, target.height * 0.5, 0));
+            this.bot.activateItem(); // pull
+            await new Promise(r => setTimeout(r, 1000)); // charge
+            this.bot.deactivateItem(); // fire
+            return;
+        }
+
+        // 3. Melee (Standard)
+        if (this.bot.pvp.target !== target) {
+            console.log(`[CombatModule] Melee Charge: ${target_name}!`);
+            this.bot.pvp.attack(target);
+        }
     }
 
     async equip_best_weapon() {

@@ -86,6 +86,23 @@ class GatherBehavior {
                 // 4. Mine
                 await this.bot.dig(targetBlock); // Use fresh block reference
                 gathered++;
+
+                // 5. Replant (Polish)
+                if (resourceName.includes('log')) {
+                    const sapling = this.bot.inventory.items().find(i => i.name.includes('sapling'));
+                    if (sapling) {
+                        const ground = this.bot.blockAt(block.position.offset(0, -1, 0));
+                        if (ground && ['dirt', 'grass_block', 'podzol'].includes(ground.name)) {
+                            try {
+                                await this.bot.equip(sapling, 'hand');
+                                await this.bot.placeBlock(ground, new Vec3(0, 1, 0));
+                                console.log(`[Gather] 🌱 Replanted ${sapling.name}`);
+                            } catch (e) {
+                                // Ignore replant errors (e.g., stood on spot)
+                            }
+                        }
+                    }
+                }
             } catch (err) {
                 console.log(`[Gather] Error mining ${resourceName}: ${err.message}`);
                 continue; // Try next block

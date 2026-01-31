@@ -1,14 +1,12 @@
-const LieLedger = require('../../core/social/LieLedger');
-const SocialGraph = require('../../core/social/SocialGraph');
-const SocialFilter = require('../../core/social/SocialFilter');
-
-const Typos = require('../../core/humanizer/Typos');
+const CommandParser = require('../../core/communication/CommandParser');
 
 class ChatEngine {
     constructor(botCore) {
         this.botCore = botCore;
         this.messageHistory = [];
         this.isProcessing = false;
+
+        this.commandParser = new CommandParser(botCore);
 
         // Social Brain v2
         this.lieLedger = new LieLedger();
@@ -57,14 +55,34 @@ class ChatEngine {
         }
 
         if (decision.action === 'execute') {
-            // Check if message is a command
-            const cmdMatch = message.match(/^\/(\w+)/) || message.match(/^!(\w+)/) || message.match(/^(\w+)$/);
-            // Simple command parsing: "come", "/come", "!come"
-            if (cmdMatch) {
-                const cmd = cmdMatch[1].toLowerCase();
-                if (await this.handleCommand(cmd, username)) return;
+            if (decision.action === 'execute') {
+                // PHASE 8: Smart Command Parsing
+                console.log(`[ChatEngine] Analyzing intent for: "${message}"...`);
+                const parsed = await this.commandParser.parse(username, message);
+
+                if (parsed.type === 'CMD') {
+                    console.log(`[ChatEngine] 🤖 Detected Command from ${username}. Jobs:`, parsed.content);
+                    // Send to TaskManager
+                    const jobQueue = parsed.content;
+                    // Wrap as a "Plan" object for TaskManager compatibility
+                    const plan = {
+                        complex_task: message,
+                        steps: jobQueue.map(job => ({
+                            action: job.goal,
+                            params: job.params
+                        }))
+                    };
+
+                    this.botCore.taskManager.addTask(plan, username, true); // Urgent = true
+
+                    // Ack
+                    this.botCore.say(`Ok ${username}, on it.`);
+                    return;
+                }
+
+                // If CHAT, parse might return content if it was a failed command or just chat
+                // We continue to persona generation
             }
-            // If not a command, fall through to reply (Owner chatting normally)
         }
 
         // 2. Generate Reply using LLM + Lie Ledger
