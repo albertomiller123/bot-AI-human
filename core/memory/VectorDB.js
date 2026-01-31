@@ -109,31 +109,29 @@ class VectorDB {
         const queryVector = await this.createEmbedding(query);
         if (!queryVector) return [];
 
-        let topResults = [];
+        let topResults = []; // Keep only top K results
 
         try {
-            // Retrieve all rows (SQLite 'all' loads everything, but 'each' is better for streaming)
-            // Limitations: sqlite3 'each' is callback based. 
-            // For now, to solve OOM, we can fetch just ID and Embedding first?
-            // Or just fetch chunks.
-            // A simple "SELECT * FROM vectors" for 10k rows might be 20-30MB JSON stringified. 
-            // It is strictly better than "SELECT *" AND "keeping it in RAM forever".
-            // optimization: We will accept a temporary load of data for the search duration, but not keep it.
+            // Streaming Scan: Read 1 row -> Compute Logic -> Keep/Discard -> GC
+            // This ensures we never hold the full DB in memory.
 
-            const rows = await db.all("SELECT content, embedding, metadata FROM vectors");
+            await db.each("SELECT content, embedding, metadata FROM vectors", [], (err, row) => {
+                if (err) return;
 
-            // Streaming calculation to avoid creating huge object arrays
-            // Note: 'rows' still consumes RAM, but GC can reclaim it after search.
-            // Ideally we'd use a cursor/stream, but standard sqlite3 driver is limited here without complexity.
-
-            topResults = rows.map(row => {
                 const vec = JSON.parse(row.embedding);
                 const score = this.cosineSimilarity(queryVector, vec);
-                return { text: row.content, score, metadata: JSON.parse(row.metadata || '{}') };
-            })
-                .sort((a, b) => b.score - a.score)
-                .filter(item => item.score > 0.3)
-                .slice(0, limit);
+
+                if (score > 0.3) {
+                    const item = { text: row.content, score, metadata: JSON.parse(row.metadata || '{}') };
+
+                    // Simple Insertion Sort / Keep top K
+                    topResults.push(item);
+                    topResults.sort((a, b) => b.score - a.score);
+                    if (topResults.length > limit) {
+                        topResults.pop(); // Remove worst
+                    }
+                }
+            });
 
         } catch (e) {
             console.error("[VectorDB] Search Error:", e);

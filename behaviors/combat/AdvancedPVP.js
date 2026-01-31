@@ -35,7 +35,9 @@ class AdvancedPVP {
         if (this.shieldListener) {
             this.bot.removeListener('entityStatus', this.shieldListener);
             this.shieldListener = null;
+            console.log("[PVP] Stopped and listeners removed.");
         }
+        this.isCritJumping = false;
     }
 
     get bot() { return this.botCore.bot; }

@@ -125,6 +125,33 @@ class DatabaseManager {
     }
 
     /**
+     * Run a query that calls a callback for each row (Streaming)
+     * @param {string} sql 
+     * @param {Array} params 
+     * @param {Function} callback (err, row) => void
+     * @returns {Promise<number>} Number of rows processed
+     */
+    each(sql, params = [], callback) {
+        return new Promise((resolve, reject) => {
+            let count = 0;
+            this.db.each(sql, params, (err, row) => {
+                if (err) {
+                    // For 'each', error logic is tricky if it happens mid-stream.
+                    // Usually we want to stop or notify.
+                    if (callback) callback(err, null);
+                } else {
+                    count++;
+                    if (callback) callback(null, row);
+                }
+            }, (err, num) => {
+                // Completion callback
+                if (err) reject(err);
+                else resolve(num);
+            });
+        });
+    }
+
+    /**
      * Execute a script (multiple statements)
      * @param {string} sql 
      * @returns {Promise<void>}

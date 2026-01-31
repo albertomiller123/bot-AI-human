@@ -76,7 +76,8 @@ class GatherBehavior {
     async manageTrash() {
         const TRASH_ITEMS = [
             'dirt', 'cobblestone', 'diorite', 'granite', 'andesite',
-            'netherrack', 'gravel', 'sand', 'rotten_flesh', 'spider_eye', 'bone'
+            'netherrack', 'gravel', 'sand', 'rotten_flesh', 'spider_eye', 'bone',
+            'poisonous_potato', 'wheat_seeds', 'melon_seeds', 'pumpkin_seeds', 'beetroot_seeds', 'sapling', 'bamboo'
         ];
 
         // Items we NEVER toss (safeguard)
@@ -86,22 +87,32 @@ class GatherBehavior {
         let clearedSomething = false;
 
         for (const item of items) {
-            if (TRASH_ITEMS.includes(item.name) && !SAFE_ITEMS.includes(item.name)) {
+            // Basic partial match for saplings/seeds
+            const isTrash = TRASH_ITEMS.includes(item.name) ||
+                (item.name.includes('seed') && !['wheat', 'carrot', 'potato'].includes(item.name)) ||
+                item.name.includes('sapling');
+
+            if (isTrash && !SAFE_ITEMS.includes(item.name)) {
                 try {
                     console.log(`[Gather] 🗑️ Tossing trash: ${item.name} x${item.count}`);
+
+                    // Look down to avoid auto-pickup
+                    await this.bot.look(this.bot.entity.yaw, -Math.PI / 2, true);
+
                     await this.bot.toss(item.type, null, item.count);
                     clearedSomething = true;
-                    // Optimization: Wait a bit to sync inventory
-                    await new Promise(r => setTimeout(r, 100));
 
-                    // If we cleared a slot, we can stop if we just needed *some* space?
-                    // But better to clear ALL trash while we are at it.
+                    // Optimization: Wait a bit to sync inventory & avoid spam kick
+                    await new Promise(r => setTimeout(r, 600));
 
                 } catch (e) {
                     console.error(`[Gather] Error tossing ${item.name}:`, e);
                 }
             }
         }
+
+        // Reset look
+        // await this.bot.look(this.bot.entity.yaw, 0);
 
         return clearedSomething || this.bot.inventory.emptySlotCount() > 0;
     }
