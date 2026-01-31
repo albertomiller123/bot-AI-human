@@ -89,8 +89,8 @@ class AIManager extends EventEmitter {
     }
 
     _estimateTokens(text) {
-        // Safer estimate for Unicode/Vietnamese (Average 3 chars per token instead of 4)
-        return Math.ceil(text.length / 3);
+        // Safer estimate for Unicode/Vietnamese (Average 2.5 chars per token)
+        return Math.ceil(text.length / 2.5);
     }
 
     async _sendRequest(type, prompt, jsonMode) {

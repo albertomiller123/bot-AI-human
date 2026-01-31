@@ -41,7 +41,7 @@ class GoalArbitrator {
                 check: () => this.hasAgenda()
             },
 
-            { id: 'progression_iron', priority: 85, check: () => this.needsIron() },
+            { id: 'progression_iron', priority: 90, check: () => this.needsIron() },
             { id: 'progression_diamond', priority: 40, check: () => this.needsDiamond() },
             { id: 'progression_nether', priority: 30, check: () => this.readyForNether() }
         ];

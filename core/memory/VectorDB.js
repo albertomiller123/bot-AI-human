@@ -1,9 +1,10 @@
+const { v4: uuidv4 } = require('uuid');
 const db = require('../database/DatabaseManager');
 
 class VectorDB {
     constructor(botCore) {
         this.botCore = botCore;
-        // RAM Cache removed for memory safety (Issue #11)
+        this.vectors = []; // Validated Cache (User request)
 
         // Local model pipeline
         this.embeddingPipeline = null;
@@ -12,6 +13,9 @@ class VectorDB {
         // Initialize DB
         this.initDB();
     }
+    // ... (skip unchanged methods)
+
+    // ... (skip unchanged methods)
 
     async initDB() {
         try {
@@ -82,24 +86,27 @@ class VectorDB {
     }
 
     /**
-     * Add new memory
+     * Add new memory (Race Condition Fixed)
      */
     async add(text, metadata = {}) {
         const embedding = await this.createEmbedding(text);
         if (!embedding) return;
 
-        const id = Date.now() + Math.random().toString(36).substr(2, 9);
+        const id = require('uuid').v4(); // Ensure uuid is used
         const timestamp = new Date().toISOString();
+        const entry = { id, content: text, embedding, metadata, timestamp };
 
-        // Async Insert to DB
-        db.run(
-            `INSERT INTO vectors (id, content, embedding, metadata, timestamp) VALUES (?, ?, ?, ?, ?)`,
-            [id, text, JSON.stringify(embedding), JSON.stringify(metadata), timestamp]
-        ).then(() => {
+        try {
+            await db.run(
+                `INSERT INTO vectors (id, content, embedding, metadata, timestamp) VALUES (?, ?, ?, ?, ?)`,
+                [id, text, JSON.stringify(embedding), JSON.stringify(metadata), timestamp]
+            );
+            // Only push to RAM when DB success
+            if (this.vectors) this.vectors.push(entry);
             console.log(`[VectorDB] 🧠 Remembered: "${text.substring(0, 30)}..."`);
-        }).catch(err => {
+        } catch (err) {
             console.error("[VectorDB] ❌ Save Error:", err);
-        });
+        }
     }
 
     /**
