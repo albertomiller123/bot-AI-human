@@ -199,9 +199,12 @@ class AdvancedPVP {
     }
 
     async checkHealth() {
-        if (this.bot.health < 10 && this.bot.food < 20) {
+        // Eat if food is low (cannot regen) or health is critical
+        if (this.bot.food < 18 || this.bot.health < 15) {
             const food = this.bot.inventory.items().find(i => i.name.includes('cooked') || i.name.includes('bread'));
-            if (food) {
+
+            // Only eat if we actually have food and aren't full
+            if (food && this.bot.food < 20) {
                 this.bot.deactivateItem(); // Lower shield to eat
                 await this.bot.equip(food, 'hand');
                 await this.bot.consume();

@@ -23,6 +23,17 @@ class DatabaseManager {
             }
         });
 
+
+        // Handle Graceful Shutdown
+        if (!DatabaseManager.listening) {
+            ['SIGINT', 'SIGTERM', 'exit'].forEach(signal => {
+                process.on(signal, () => {
+                    this.close().catch(console.error);
+                });
+            });
+            DatabaseManager.listening = true;
+        }
+
         DatabaseManager.instance = this;
     }
 
