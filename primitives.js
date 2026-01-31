@@ -40,12 +40,14 @@ class Primitives {
         const target = new Vec3(goal.x, goal.y, goal.z);
         this.bot.setControlState('sprint', true);
 
+        // OPTIMIZATION: Fixed "Crit Jump" bunny hopping
+        // Only jump if we are actually stuck against a block
         const jumpInterval = setInterval(() => {
-            if (this.bot.entity.onGround && this.bot.entity.position.distanceTo(target) > 5) {
+            if (this.bot.entity.onGround && this.bot.entity.isCollidedHorizontally) {
                 this.bot.setControlState('jump', true);
                 setTimeout(() => this.bot.setControlState('jump', false), 50);
             }
-        }, 500);
+        }, 100); // Check more frequently (100ms) but jump less often
 
         try {
             await this._pathfind_move(goal);
@@ -244,6 +246,18 @@ class Primitives {
         const pos = this.get_position();
         await this.botCore.memory.saveLocation('base', pos);
         this.botCore.say("Da danh dau can cu tai day! (Base Set)");
+    }
+
+    async go_base() {
+        if (!this.botCore.memory) throw new Error("Memory Manager not available");
+        const location = await this.botCore.memory.getLocation('base');
+        if (!location) {
+            this.botCore.say("Base location not found.");
+            return false;
+        }
+        await this.bot.pathfinder.goto(new GoalBlock(location.x, location.y, location.z));
+        this.botCore.say("Welcome home.");
+        return true;
     }
 
     async guard_base(radius = 20) {

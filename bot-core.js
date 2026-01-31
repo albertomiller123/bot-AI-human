@@ -132,12 +132,18 @@ class BotCore {
     }
 
     async cleanup() {
+        // Cleanup AI Worker
+        if (this.aiManager) {
+            await this.aiManager.cleanup();
+        }
+
         if (!this.bot) return;
         console.log("[BotCore] Cleaning up previous bot instance...");
         try {
             this.bot.removeAllListeners();
             if (this.bot._client) this.bot._client.removeAllListeners();
             this.bot.end();
+            this.bot.removeAllListeners(); // Redundant safe clear
         } catch (e) {
             // Ignore errors during cleanup
         }

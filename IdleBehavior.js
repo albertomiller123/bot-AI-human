@@ -116,9 +116,16 @@ class IdleBehavior {
 
     async _wanderSafely() {
         console.log("[Idle] Just wandering a bit...");
+
+        // Debounce Look Spam
+        if (Date.now() - (this.lastLookTime || 0) < 2000) {
+            return;
+        }
+
         if (this.botCore.primitives?.fidget) {
             try {
                 await this.botCore.primitives.fidget();
+                this.lastLookTime = Date.now();
             } catch (e) {
                 console.warn("[Idle] Wander failed:", e.message);
             }

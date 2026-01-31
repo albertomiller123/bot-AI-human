@@ -1,23 +1,35 @@
 {
   "taskQueue": [
     {
-      "step": "Build a small shelter at the current position to secure resources",
+      "step": "Spawn the bot at the current coordinates (77,57,-95).",
       "status": "pending",
       "retries": 1,
-      "timestamp": 1769846523363
+      "timestamp": 1769847122843
     },
     {
-      "step": "Mine stone and iron ore to craft stronger tools and weapons",
+      "step": "Check the bot's current game mode.",
       "status": "pending",
-      "retries": 1,
-      "timestamp": 1769846525596
+      "retries": 0,
+      "timestamp": 1769847124766
     },
     {
-      "step": "Start mining or exploring caves to gather new resources, replacing woodcutting",
+      "step": "If the game mode is not Survival, issue the command to set it to Survival Mode.",
       "status": "pending",
-      "retries": 1,
-      "timestamp": 1769846527632
+      "retries": 0,
+      "timestamp": 1769847126727
+    },
+    {
+      "step": "Confirm that the game mode has been successfully changed to Survival.",
+      "status": "pending",
+      "retries": 0,
+      "timestamp": 1769847128671
+    },
+    {
+      "step": "Spawn the bot at the current position (78,58,-93).",
+      "status": "pending",
+      "retries": 0,
+      "timestamp": 1769847185512
     }
   ],
-  "timestamp": 1769846529669
+  "timestamp": 1769847185512
 }

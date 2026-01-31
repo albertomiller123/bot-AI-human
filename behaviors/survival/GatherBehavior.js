@@ -13,10 +13,14 @@ class GatherBehavior {
     async gatherResource(resourceName, count = 1) {
         console.log(`[Gather] Starting to gather ${count} ${resourceName} (range: ${this.maxSearchDistance})...`);
 
-        // 0. Check Inventory Full
+        // 0. Check Inventory Full & Manage Trash
         if (this.bot.inventory.emptySlotCount() === 0) {
-            console.warn("[Gather] ⚠️ Inventory is FULL. Cannot gather more items.");
-            return false;
+            console.warn("[Gather] ⚠️ Inventory is FULL. Attempting to clear trash...");
+            const cleared = await this.manageTrash();
+            if (!cleared) {
+                console.warn("[Gather] ❌ Inventory still full after trash clear. Cannot gather.");
+                return false;
+            }
         }
 
         // 1. Identify block type
@@ -67,6 +71,39 @@ class GatherBehavior {
         }
 
         return gathered > 0;
+    }
+
+    async manageTrash() {
+        const TRASH_ITEMS = [
+            'dirt', 'cobblestone', 'diorite', 'granite', 'andesite',
+            'netherrack', 'gravel', 'sand', 'rotten_flesh', 'spider_eye', 'bone'
+        ];
+
+        // Items we NEVER toss (safeguard)
+        const SAFE_ITEMS = ['diamond', 'iron_ingot', 'gold_ingot', 'coal', 'bread', 'cooked_beef'];
+
+        const items = this.bot.inventory.items();
+        let clearedSomething = false;
+
+        for (const item of items) {
+            if (TRASH_ITEMS.includes(item.name) && !SAFE_ITEMS.includes(item.name)) {
+                try {
+                    console.log(`[Gather] 🗑️ Tossing trash: ${item.name} x${item.count}`);
+                    await this.bot.toss(item.type, null, item.count);
+                    clearedSomething = true;
+                    // Optimization: Wait a bit to sync inventory
+                    await new Promise(r => setTimeout(r, 100));
+
+                    // If we cleared a slot, we can stop if we just needed *some* space?
+                    // But better to clear ALL trash while we are at it.
+
+                } catch (e) {
+                    console.error(`[Gather] Error tossing ${item.name}:`, e);
+                }
+            }
+        }
+
+        return clearedSomething || this.bot.inventory.emptySlotCount() > 0;
     }
 
     findBlocks(name, count) {

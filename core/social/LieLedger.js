@@ -1,32 +1,42 @@
-const fs = require('fs');
-const path = require('path');
+const db = require('../database/DatabaseManager');
 
 class LieLedger {
     constructor() {
-        this.filePath = path.join(__dirname, '../../data/social/lie_ledger.json');
-        this.data = {};
-        this.load();
+        this.data = {}; // Cache: username -> { facts_told: [] }
+        this.initDB();
     }
 
-    load() {
+    async initDB() {
         try {
-            const dir = path.dirname(this.filePath);
-            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-            if (fs.existsSync(this.filePath)) {
-                this.data = JSON.parse(fs.readFileSync(this.filePath, 'utf8'));
-            }
-        } catch (e) {
-            console.error("[LieLedger] Load Error:", e);
-            this.data = {};
+            await db.run(`
+                CREATE TABLE IF NOT EXISTS lie_ledger (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT,
+                    fact_text TEXT,
+                    timestamp INTEGER
+                )
+            `);
+            await this.load();
+        } catch (err) {
+            console.error('[LieLedger] DB Init Error:', err);
         }
     }
 
-    save() {
+    async load() {
         try {
-            fs.writeFileSync(this.filePath, JSON.stringify(this.data, null, 2));
+            const rows = await db.all("SELECT * FROM lie_ledger ORDER BY timestamp ASC");
+            rows.forEach(row => {
+                if (!this.data[row.username]) {
+                    this.data[row.username] = { facts_told: [] };
+                }
+                this.data[row.username].facts_told.push({
+                    text: row.fact_text,
+                    timestamp: row.timestamp
+                });
+            });
+            console.log(`[LieLedger] Loaded ${rows.length} facts.`);
         } catch (e) {
-            console.error("[LieLedger] Save Error:", e);
+            console.error("[LieLedger] Load Error:", e);
         }
     }
 
@@ -39,16 +49,22 @@ class LieLedger {
         if (!this.data[username]) {
             this.data[username] = { facts_told: [] };
         }
+
+        const timestamp = Date.now();
         this.data[username].facts_told.push({
             text: fact,
-            timestamp: Date.now()
+            timestamp: timestamp
         });
-        this.save();
+
+        // Async Save
+        db.run(
+            `INSERT INTO lie_ledger (username, fact_text, timestamp) VALUES (?, ?, ?)`,
+            [username, fact, timestamp]
+        ).catch(e => console.error("[LieLedger] Save Error:", e));
     }
 
     /**
      * Check if a new statement contradicts previous lies
-     * (Simple string matching for MVP)
      */
     checkConsistency(username, newStatement) {
         const facts = this.getFacts(username);

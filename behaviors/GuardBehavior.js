@@ -116,9 +116,28 @@ class GuardBehavior {
         return false;
     }
 
-    engage(target) {
+    async engage(target) {
         console.log(`[Guard] Engaging threat: ${target.name || target.username}`);
         this.engageTarget = target;
+
+        // SHIELD LOGIC: Prepare for combat
+        try {
+            const offHandItem = this.bot.inventory.slots[45]; // 45 is off-hand slot
+            const shield = this.bot.inventory.items().find(i => i.name.includes('shield'));
+
+            if (offHandItem && offHandItem.name !== 'shield') {
+                console.log("[Guard] Unequipping off-hand item for combat...");
+                await this.bot.unequip('off-hand');
+            }
+
+            if (shield && (!offHandItem || offHandItem.name !== 'shield')) {
+                console.log("[Guard] Equipping shield...");
+                await this.bot.equip(shield, 'off-hand');
+            }
+        } catch (e) {
+            console.warn("[Guard] Shield equip failed:", e.message);
+        }
+
         this.bot.pvp.attack(target);
     }
 

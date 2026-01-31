@@ -1,25 +1,40 @@
-const fs = require('fs');
-const path = require('path');
+const db = require('../database/DatabaseManager');
 
 class VectorDB {
     constructor(botCore) {
         this.botCore = botCore;
-        // Persistence path
-        this.dbPath = path.join(__dirname, '../../data/memory_vector.json');
-        this.vectors = []; // Valid RAM Cache
+        this.vectors = []; // RAM Cache for fast search (sync with DB)
 
         // Local model pipeline
         this.embeddingPipeline = null;
         this.loadingPromise = null;
 
-        this.saveTimer = null;
-        this.load();
+        // Initialize DB and load data
+        this.initDB();
+    }
+
+    async initDB() {
+        try {
+            await db.run(`
+                CREATE TABLE IF NOT EXISTS vectors (
+                    id TEXT PRIMARY KEY,
+                    content TEXT,
+                    embedding BLOB,
+                    metadata TEXT,
+                    timestamp TEXT
+                )
+            `);
+            await this.load();
+            this.initModel(); // Start loading AI model in background
+        } catch (err) {
+            console.error('[VectorDB] DB Init Error:', err);
+        }
     }
 
     /**
      * Init AI Model (Lazy Load with Race Condition Safety)
      */
-    async init() {
+    async initModel() {
         if (this.embeddingPipeline) return; // Already loaded
 
         // Check if loading is in progress
@@ -30,9 +45,13 @@ class VectorDB {
 
         console.log("[VectorDB] ⏳ Loading Local Embedding Model...");
         this.loadingPromise = (async () => {
-            const { pipeline } = await import('@xenova/transformers');
-            this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-            console.log("[VectorDB] ✅ AI Model Ready!");
+            try {
+                const { pipeline } = await import('@xenova/transformers');
+                this.embeddingPipeline = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+                console.log("[VectorDB] ✅ AI Model Ready!");
+            } catch (e) {
+                console.error("[VectorDB] ❌ Failed to load AI Model:", e);
+            }
         })();
 
         await this.loadingPromise;
@@ -46,7 +65,9 @@ class VectorDB {
         if (!text || text.trim().length === 0) return null;
 
         try {
-            await this.init(); // Ensure model loaded
+            await this.initModel(); // Ensure model loaded
+
+            if (!this.embeddingPipeline) return null;
 
             // Run model
             const output = await this.embeddingPipeline(text, { pooling: 'mean', normalize: true });
@@ -66,17 +87,35 @@ class VectorDB {
         const embedding = await this.createEmbedding(text);
         if (!embedding) return;
 
+        const id = Date.now() + Math.random().toString(36).substr(2, 9);
+        const timestamp = new Date().toISOString();
         const entry = {
-            id: Date.now() + Math.random().toString(36).substr(2, 9),
+            id: id,
             text: text,
             vector: embedding,
             metadata: metadata,
-            timestamp: new Date().toISOString()
+            timestamp: timestamp
         };
 
+        // Update RAM
         this.vectors.push(entry);
-        this.save();
-        console.log(`[VectorDB] 🧠 Remembered: "${text.substring(0, 30)}..."`);
+
+        // Async Insert to DB (Non-blocking)
+        db.run(
+            `INSERT INTO vectors (id, content, embedding, metadata, timestamp) VALUES (?, ?, ?, ?, ?)`,
+            [id, text, JSON.stringify(embedding), JSON.stringify(metadata), timestamp]
+        ).then(() => {
+            console.log(`[VectorDB] 🧠 Remembered: "${text.substring(0, 30)}..."`);
+        }).catch(err => {
+            console.error("[VectorDB] ❌ Save Error:", err);
+        });
+
+        // Pruning RAM if too large (optional, prevents memory leak)
+        if (this.vectors.length > 2000) {
+            // We might want to keep most recent or most relevant?
+            // For now, simple slice to prevent crash, but DB has everything.
+            this.vectors = this.vectors.slice(-2000);
+        }
     }
 
     /**
@@ -86,7 +125,8 @@ class VectorDB {
         const queryVector = await this.createEmbedding(query);
         if (!queryVector) return [];
 
-        // Cosine Similarity
+        // Cosine Similarity on RAM cache
+        // Improvement: We could fetch from DB if RAM is partial, but for now RAM = Full DB (mostly)
         const results = this.vectors.map(entry => {
             const score = this.cosineSimilarity(queryVector, entry.vector);
             return { ...entry, score };
@@ -97,7 +137,7 @@ class VectorDB {
             .sort((a, b) => b.score - a.score)
             .filter(item => item.score > 0.3) // Threshold 30%
             .slice(0, limit)
-            .map(item => ({ text: item.text, score: item.score, metadata: item.metadata }));
+            .map(item => ({ text: item.text || item.content, score: item.score, metadata: item.metadata }));
     }
 
     cosineSimilarity(vecA, vecB) {
@@ -112,37 +152,20 @@ class VectorDB {
         return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
     }
 
-    save() {
-        // Debounce: Wait 10 seconds after last change
-        if (this.saveTimer) clearTimeout(this.saveTimer);
-
-        this.saveTimer = setTimeout(() => {
-            try {
-                // Pruning (User Request)
-                if (this.vectors.length > 1000) {
-                    this.vectors = this.vectors.slice(-1000); // Chỉ giữ 1000 ký ức mới nhất
-                }
-
-                const dir = path.dirname(this.dbPath);
-                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-                // Async Write to prevent blocking event loop
-                fs.writeFile(this.dbPath, JSON.stringify(this.vectors, null, 2), (err) => {
-                    if (err) console.error("[VectorDB] ❌ Save Error:", err);
-                    else console.log("[VectorDB] ✅ Memory saved (Auto-save).");
-                });
-            } catch (e) {
-                console.error("[VectorDB] Save Prep Error:", e);
-            }
-        }, 10000);
-    }
-
-    load() {
+    async load() {
         try {
-            if (fs.existsSync(this.dbPath)) {
-                this.vectors = JSON.parse(fs.readFileSync(this.dbPath, 'utf8'));
-                console.log(`[VectorDB] Loaded ${this.vectors.length} memories.`);
-            }
+            console.log("[VectorDB] Loading memories from SQLite...");
+            const rows = await db.all("SELECT * FROM vectors ORDER BY timestamp ASC"); // Oldest first? or Newest?
+
+            this.vectors = rows.map(row => ({
+                id: row.id,
+                text: row.content,
+                vector: JSON.parse(row.embedding),
+                metadata: JSON.parse(row.metadata || '{}'),
+                timestamp: row.timestamp
+            }));
+
+            console.log(`[VectorDB] Loaded ${this.vectors.length} memories from DB.`);
         } catch (e) {
             console.error("[VectorDB] Load Error:", e);
             this.vectors = [];

@@ -57,7 +57,31 @@ class PromptBuilder {
 
     _formatState(state) {
         return Object.entries(state)
-            .map(([key, value]) => `${key}: ${value}`)
+            .map(([key, value]) => {
+                let formattedValue = value;
+
+                // Handle Arrays (like chat history) -> Keep last 10
+                if (Array.isArray(value)) {
+                    if (value.length > 10) {
+                        const dropped = value.length - 10;
+                        formattedValue = `[...${dropped} older items...]\n` + value.slice(-10).map(v => JSON.stringify(v)).join('\n');
+                    } else {
+                        formattedValue = value.map(v => typeof v === 'object' ? JSON.stringify(v) : v).join('\n');
+                    }
+                }
+                // Handle Objects -> JSON stringify
+                else if (typeof value === 'object' && value !== null) {
+                    formattedValue = JSON.stringify(value);
+                }
+
+                // Truncate Long Strings
+                const strValue = String(formattedValue);
+                if (strValue.length > 2000) {
+                    return `${key}: ${strValue.substring(0, 2000)}... [TRUNCATED ${strValue.length - 2000} chars]`;
+                }
+
+                return `${key}: ${strValue}`;
+            })
             .join('\n');
     }
 }

@@ -17,7 +17,15 @@ class GoalManager {
     }
 
     async tick() {
-        if (this.isLocked) return;
+        // Safety Check: Auto-unlock if stuck
+        if (this.isLocked) {
+            if (Date.now() - this.lockTimestamp > 15000) { // 15s Timeout
+                console.warn("[GoalManager] ⚠️ Lock timed out! Force unlocking.");
+                this.forceUnlock();
+            } else {
+                return;
+            }
+        }
 
         let bestProposal = null;
 
@@ -63,7 +71,9 @@ class GoalManager {
 
         // Stop pathfinder if active (global safety)
         if (this.botCore.bot && this.botCore.bot.pathfinder) {
-            this.botCore.bot.pathfinder.setGoal(null);
+            try {
+                this.botCore.bot.pathfinder.setGoal(null);
+            } catch (e) { }
         }
 
         this.activeGoal = null;
@@ -80,21 +90,39 @@ class GoalManager {
         // We do NOT await here. We fire and forget.
         // If we await, the tick loop halts and we can't react to higher priority events.
         if (proposal.execute) {
-            proposal.execute().catch(e => {
-                console.error(`[GoalManager] Goal Execution Failed:`, e);
-                // If goal crashes, we should probably reset so we can pick a new one
-                if (this.activeGoal === proposal) {
-                    this.activeGoal = null;
-                }
-            });
+            // Wrap in try-catch block for safety
+            try {
+                proposal.execute().catch(e => {
+                    console.error(`[GoalManager] Goal Execution Failed:`, e);
+                    // If goal crashes, we should probably reset so we can pick a new one
+                    if (this.activeGoal === proposal) {
+                        this.activeGoal = null;
+                    }
+                });
+            } catch (e) {
+                console.error(`[GoalManager] Goal Sync Execution Failed:`, e);
+                this.activeGoal = null;
+            }
         }
     }
 
     /**
      * Lock the manager (e.g. during PVP or delicate operations)
      */
-    lock() { this.isLocked = true; }
-    unlock() { this.isLocked = false; }
+    lock() {
+        this.isLocked = true;
+        this.lockTimestamp = Date.now();
+    }
+
+    unlock() {
+        this.isLocked = false;
+        this.lockTimestamp = 0;
+    }
+
+    forceUnlock() {
+        this.unlock();
+        console.log("[GoalManager] 🔓 Force unlocked via safety mechanism");
+    }
 }
 
 module.exports = GoalManager;

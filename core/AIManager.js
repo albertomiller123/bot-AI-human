@@ -10,6 +10,7 @@ class AIManager extends EventEmitter {
         this.config = null;
         this.pendingRequests = new Map();
         this.requestIdCounter = 0;
+        this.isReady = false;
 
         this._init();
     }
@@ -51,6 +52,7 @@ class AIManager extends EventEmitter {
             this.worker.on('message', (msg) => {
                 if (msg.type === 'init_done') {
                     console.log("[AIManager] ✅ AI Worker Initialized.");
+                    this.isReady = true;
                 } else if (msg.type === 'result') {
                     this._handleResult(msg.result);
                 }
@@ -86,8 +88,35 @@ class AIManager extends EventEmitter {
         }
     }
 
+    _estimateTokens(text) {
+        return Math.ceil(text.length / 4);
+    }
+
     async _sendRequest(type, prompt, jsonMode) {
         if (!this.worker) return null;
+
+        // Waiting for Worker Initialization
+        if (!this.isReady) {
+            // Simple wait (up to 5s)
+            let retries = 0;
+            while (!this.isReady && retries < 50) {
+                await new Promise(r => setTimeout(r, 100));
+                retries++;
+            }
+            if (!this.isReady) {
+                console.error("[AIManager] Worker not ready after 5s.");
+                return null;
+            }
+        }
+
+        // TOKEN SAFETY CHECK
+        const estimatedTokens = this._estimateTokens(prompt);
+        // Default safe limit: 8192 tokens (approx 32k chars)
+        // Adjust based on model config if possible, but 8k is a good safe baseline for most modern models
+        if (estimatedTokens > 8000) {
+            console.warn(`[AIManager] ⚠️ Prompt too long! (~${estimatedTokens} tokens). Truncating...`);
+            prompt = prompt.substring(0, 32000) + "\n...[SYSTEM: TRUNCATED DUE TO TOKEN LIMIT]";
+        }
 
         const id = ++this.requestIdCounter;
 
@@ -120,18 +149,52 @@ class AIManager extends EventEmitter {
         });
     }
 
-    _sanitizePayload(obj) {
-        const seen = new WeakSet();
-        return JSON.parse(JSON.stringify(obj, (key, value) => {
-            if (typeof value === 'object' && value !== null) {
-                if (key === 'bot' || key === 'botCore') return undefined; // Explicitly drop massive objects
-                if (seen.has(value)) {
-                    return '[Circular]';
-                }
-                seen.add(value);
+    async cleanup() {
+        if (this.worker) {
+            console.log("[AIManager] 🛑 Terminating AI Worker...");
+            await this.worker.terminate();
+            this.worker = null;
+        }
+        // Clear pending requests
+        for (const [id, req] of this.pendingRequests) {
+            clearTimeout(req.timeout);
+            req.reject(new Error("AI Manager Cleanup"));
+        }
+        this.pendingRequests.clear();
+    }
+
+    _sanitizePayload(obj, depth = 0, maxDepth = 3) {
+        // 1. Primitive checks
+        if (obj === null || typeof obj !== 'object') {
+            return obj;
+        }
+
+        // 2. Depth Limit
+        if (depth >= maxDepth) {
+            return "[MaxDepth]";
+        }
+
+        // 3. Handle Arrays
+        if (Array.isArray(obj)) {
+            const arr = [];
+            for (let i = 0; i < obj.length; i++) {
+                arr[i] = this._sanitizePayload(obj[i], depth + 1, maxDepth);
             }
-            return value;
-        }));
+            return arr;
+        }
+
+        // 4. Handle Objects
+        const res = {};
+        for (const key in obj) {
+            // Filter large/circular keys
+            if (key === 'bot' || key === 'botCore' || key === 'socket') continue;
+
+            // Only copy own properties
+            if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                res[key] = this._sanitizePayload(obj[key], depth + 1, maxDepth);
+            }
+        }
+        return res;
     }
 
     cancelRequest(id) {
