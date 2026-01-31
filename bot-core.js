@@ -225,7 +225,8 @@ class BotCore {
             }
 
             // Start Goal Loop
-            setInterval(() => this.goalManager.tick(), 1000);
+            // Start Goal Loop (Fast Tick for Combat)
+            setInterval(() => this.goalManager.tick(), 50);
             console.log('[System] GoalManager Active.');
 
             // Initialize Prismarine Viewer

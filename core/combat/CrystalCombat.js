@@ -42,10 +42,10 @@ class CrystalCombat {
                 // B. Place Crystal
                 await this.placeCrystal(spot);
 
+                // ANTI-CHEAT DELAY
+                await new Promise(r => setTimeout(r, 80)); // 80ms delay between Place and Break
+
                 // C. Break Crystal (Fast)
-                // We need to re-find the entity because it just spawned (or will spawn)
-                // Actually, we can listen for entitySpawn event or just spam click the block center.
-                // Mineflayer sees entities. 
                 const crystal = this.findCrystalEntity(spot);
                 if (crystal) {
                     await this.breakCrystal(crystal);
@@ -59,7 +59,7 @@ class CrystalCombat {
             // Suppress errors to not crash loop
         }
 
-        if (this.active) setTimeout(() => this.loop(), 50); // 20 TPS
+        if (this.active) setTimeout(() => this.loop(), 100); // Slow down loop to 10 TPS (100ms) for safety
     }
 
     findCrystalSpot() {
