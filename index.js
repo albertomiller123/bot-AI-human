@@ -119,35 +119,40 @@ try {
 }
 
 // Start Bot
-try {
-    console.log("🔄 System Startup...");
+(async () => {
+    try {
+        console.log("🔄 System Startup...");
 
-    // 1. Unified Memory & AI Initialization (Single Source of Truth)
-    console.log("🧠 Initializing Core Systems...");
+        // 1. Unified Memory & AI Initialization (Single Source of Truth)
+        console.log("🧠 Initializing Core Systems...");
 
-    // VectorDB (Long Term Memory)
-    const vectorDB = new VectorDB(null); // Uses default path internally if null
-    await vectorDB.init();
-    console.log("   - VectorDB: Ready");
+        // VectorDB (Long Term Memory)
+        const vectorDB = new VectorDB(null); // Uses default path internally if null
+        await vectorDB.init();
+        console.log("   - VectorDB: Ready");
 
-    // AI Manager (Worker Threads)
-    const AIManager = require('./core/AIManager');
-    const aiManager = new AIManager(null); // Pass null initially, link later
-    console.log("   - AIManager: Ready");
+        // AI Manager (Worker Threads)
+        const AIManager = require('./core/AIManager');
+        const aiManager = new AIManager(null); // Pass null initially, link later
+        console.log("   - AIManager: Ready");
 
-    console.log("Creating BotCore...");
+        console.log("Creating BotCore...");
 
-    // Inject dependencies
-    botInstance = new BotCore(config, {
-        vectorDB: vectorDB,
-        aiManager: aiManager
-    });
+        // Inject dependencies
+        botInstance = new BotCore(config, {
+            vectorDB: vectorDB,
+            aiManager: aiManager
+        });
 
-    console.log("BotCore created. Starting...");
-    botInstance.start();
-    console.log("🚀 System initialized. Waiting for connection...");
-} catch (e) {
-    console.error("❌ Critical error during bot initialization:", e.message);
-    if (e.stack) console.error(e.stack);
-    process.exit(1);
-}
+        console.log("BotCore created. Starting...");
+        botInstance.start();
+        console.log("🚀 System initialized. Waiting for connection...");
+    } catch (e) {
+        console.error("❌ Critical error during bot initialization:", e.message);
+        if (e.stack) {
+            console.error(e.stack);
+            fs.writeFileSync('crash_trace.txt', e.stack);
+        }
+        process.exit(1);
+    }
+})();

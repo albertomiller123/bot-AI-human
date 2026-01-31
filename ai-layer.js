@@ -10,9 +10,7 @@ const AIRouter = require('./ai-router');
 const AIReflex = require('./ai-reflex');
 const ContextManager = require('./ContextManager');
 const AgentOrchestrator = require('./core/architecture/AgentOrchestrator');
-
-// FIX: Import helper functions to prevent ReferenceError
-const { getToolsForLLM, validateActionCall } = require('./action-registry');
+const { getToolsForLLM, validateActionCall } = require('./action-registry'); // Fixed helper usage
 
 class AILayer {
     constructor(botCore) {
@@ -20,11 +18,9 @@ class AILayer {
         this.contextManager = new ContextManager(botCore);
 
         // Phase 12: Dual-Brain Infrastructure
-        // Use injected AIManager if available, otherwise fallback (legacy support)
         this.brain = botCore.aiManager || new AIManager(botCore);
 
-        // CRITICAL FIX: Initialize Router and Reflex sub-agents
-        // Initialize Router and Reflex sub-agents using the Brain (worker proxy)
+        // CRITICAL FIX: Initialize Sub Agent with Proxy
         this.router = new AIRouter(this.brain);
         this.reflex = new AIReflex(this.brain);
 
@@ -120,30 +116,27 @@ class AILayer {
      */
     async _handleStrategy(username, message) {
         // Strategy Priority: 1
-        // Cannot interrupt Reflex or Guardian
         if (!this.botCore.actionLock.tryAcquire('strategy', 1, 60000)) {
             this.botCore.say("Dang ban viec gap, doi ti.");
             return null;
         }
 
-        console.log('[AI Layer] VisualPlanner activated');
+        console.log('[AI Layer] VisualPlanner activated (Strategy Mode)');
 
-        // ... rest of logic ...
-
-        // Get full context + visual
         const contextFull = await this.contextManager.getFullContext(username);
         const visualContext = this.botCore.visualCortex?.getVisualContext() || { description: 'Vision unavailable' };
 
-        // Phase 2: Agent Orchestrator (CEO + Manager + LTM)
         try {
             console.log(`[AILayer] Delegating to Orchestrator...`);
+            // Orchestrator now returns a Plan Object { type: 'strategy', steps: [...] }
+            // It DOES NOT execute.
             const result = await this.orchestrator.process(username, message, contextFull, visualContext);
 
             if (result.type === 'strategy') {
                 return {
                     type: 'strategy',
                     complex_task: message,
-                    steps: result.steps
+                    steps: result.steps // These are the actions to be executed by TaskManager
                 };
             } else if (result.type === 'chat') {
                 if (this.botCore.humanizer) {
@@ -155,10 +148,11 @@ class AILayer {
             }
         } catch (e) {
             console.error("[AILayer] Orchestrator failed:", e);
-            return null;
+            this.botCore.say("Loi xu ly chien thuat.");
+            return null; // TaskManager will handle null
         }
 
-        return null;
+        return null; // Fallback
     }
 
     /**

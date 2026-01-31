@@ -2,6 +2,8 @@ const LieLedger = require('../../core/social/LieLedger');
 const SocialGraph = require('../../core/social/SocialGraph');
 const SocialFilter = require('../../core/social/SocialFilter');
 
+const Typos = require('../../core/humanizer/Typos');
+
 class ChatEngine {
     constructor(botCore) {
         this.botCore = botCore;
@@ -12,6 +14,7 @@ class ChatEngine {
         this.lieLedger = new LieLedger();
         this.socialGraph = new SocialGraph();
         this.socialFilter = new SocialFilter(this.socialGraph);
+        this.typos = new Typos();
 
         // Persona Configuration
         this.persona = {
@@ -109,32 +112,51 @@ class ChatEngine {
 
     async handleCommand(cmd, username) {
         // Link to Butler or System
-        if (!this.botCore.survivalSystem || !this.botCore.survivalSystem.butler) return null;
-
-        const butler = this.botCore.survivalSystem.butler;
+        const survival = this.botCore.survivalSystem;
+        const butler = survival?.butler;
+        const goalManager = this.botCore.goalManager;
 
         switch (cmd) {
             case 'come':
             case 'theo':
-                return await butler.comeToOwner(username);
+                if (butler) return await butler.comeToOwner(username);
+                break;
             case 'sethome':
             case 'nha':
-                return butler.setHome();
+                if (butler) return butler.setHome();
+                break;
+
+            // DEBUG COMMANDS 
             case 'stop':
             case 'dung':
-                return await butler.stop();
+                if (goalManager) {
+                    await goalManager.stopCurrentGoal();
+                    this.botCore.say("Dung roi.");
+                    return true;
+                }
+                return await butler?.stop();
+
+            case 'status':
+                if (goalManager) {
+                    const goal = goalManager.activeGoal;
+                    const state = this.botCore.survivalSystem?.stateStack?.getCurrent();
+                    let msg = `Goal: ${goal ? goal.id : 'Idle'} (Prio: ${goal ? goal.priority : 0})`;
+                    if (state) msg += ` | State: ${state.name}`;
+                    this.botCore.say(msg);
+                    return true;
+                }
+                break;
+
+            case 'inventory':
+            case 'inv':
+                const items = this.botCore.bot.inventory.items().map(i => `${i.name}x${i.count}`).join(', ');
+                this.botCore.say(items.substring(0, 100) || "Empty."); // Limit length
+                return true;
+
             default:
                 return null;
         }
-    }
-
-    const Typos = require('../../core/humanizer/Typos');
-
-class ChatEngine {
-    constructor(botCore) {
-        // ... previous init ...
-        this.typos = new Typos();
-        // ...
+        return null;
     }
 
     async simulateTyping(text) {
@@ -142,7 +164,7 @@ class ChatEngine {
         let finalText = text;
         let correction = null;
 
-        if (Math.random() < 0.1) { // 10% chance to typo
+        if (this.typos && Math.random() < 0.1) { // 10% chance to typo
             finalText = this.typos.humanize(text, 1.0); // Force typo if check passes
             if (finalText !== text && this.typos.shouldCorrect()) {
                 correction = "*" + text;
@@ -154,14 +176,13 @@ class ChatEngine {
         const delay = Math.max(500, finalText.length * 50);
         await new Promise(r => setTimeout(r, delay));
 
-        this.bot.chat(finalText);
+        if (this.bot) this.bot.chat(finalText);
 
         if (correction) {
             await new Promise(r => setTimeout(r, 500 + Math.random() * 1000));
-            this.bot.chat(correction);
+            if (this.bot) this.bot.chat(correction);
         }
     }
-}
 }
 
 module.exports = ChatEngine;

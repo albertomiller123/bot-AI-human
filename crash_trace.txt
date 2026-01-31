@@ -1,0 +1,6 @@
+TypeError: Cannot read properties of undefined (reading 'brain')
+    at new AgentOrchestrator (D:\AI\core\architecture\AgentOrchestrator.js:8:35)
+    at new AILayer (D:\AI\ai-layer.js:32:29)
+    at new BotCore (D:\AI\bot-core.js:61:24)
+    at D:\AI\index.js:142:23
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)

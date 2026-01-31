@@ -1,0 +1,23 @@
+{
+  "taskQueue": [
+    {
+      "step": "Build a small shelter at the current position to secure resources",
+      "status": "pending",
+      "retries": 1,
+      "timestamp": 1769846523363
+    },
+    {
+      "step": "Mine stone and iron ore to craft stronger tools and weapons",
+      "status": "pending",
+      "retries": 1,
+      "timestamp": 1769846525596
+    },
+    {
+      "step": "Start mining or exploring caves to gather new resources, replacing woodcutting",
+      "status": "pending",
+      "retries": 1,
+      "timestamp": 1769846527632
+    }
+  ],
+  "timestamp": 1769846529669
+}

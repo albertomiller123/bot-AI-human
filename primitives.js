@@ -2,10 +2,12 @@
 const { goals } = require('mineflayer-pathfinder');
 const { GoalBlock } = goals;
 const { Vec3 } = require('vec3');
+const HumanMotor = require('./humanizer/HumanMotor');
 
 class Primitives {
     constructor(botCore) {
         this.botCore = botCore;
+        this.humanMotor = new HumanMotor(botCore.bot); // Inject Middleware
     }
 
     get bot() { return this.botCore.bot; }
@@ -29,58 +31,9 @@ class Primitives {
     }
 
     async smoothLookAt(position) {
-        // Non-blocking smooth look using physics ticks
-        return new Promise((resolve) => {
-            const target = new Vec3(position.x, position.y, position.z);
-            const botPos = this.bot.entity.position.offset(0, this.bot.entity.height, 0);
-            const delta = target.minus(botPos);
-
-            const targetYaw = Math.atan2(-delta.x, -delta.z);
-            const groundDist = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
-            const targetPitch = Math.atan2(delta.y, groundDist);
-
-            const steps = 10; // 10 ticks = 0.5 seconds
-            let currentStep = 0;
-            const startYaw = this.bot.entity.yaw;
-            const startPitch = this.bot.entity.pitch;
-
-            // Calculate shortest rotation direction (shortest arc)
-            let diffYaw = targetYaw - startYaw;
-            while (diffYaw > Math.PI) diffYaw -= 2 * Math.PI;
-            while (diffYaw < -Math.PI) diffYaw += 2 * Math.PI;
-
-            const diffPitch = targetPitch - startPitch;
-
-            const onTick = () => {
-                currentStep++;
-                if (currentStep > steps) {
-                    this.bot.removeListener('physicsTick', onTick);
-                    resolve();
-                    return;
-                }
-
-                // Human-like Mouse Movement (Bezier Curve with subtle "S" shape or overshoot)
-                const t = currentStep / steps;
-
-                // Control points for "S" curve or slight overshoot
-                // p0=0, p1=0.3, p2=0.85, p3=1
-                const p1 = 0.3;
-                const p2 = 0.85;
-
-                const t2 = t * t;
-                const t3 = t2 * t;
-
-                // Cubic Bezier Formula: (1-t)^3*p0 + 3*(1-t)^2*t*p1 + 3*(1-t)*t^2*p2 + t^3*p3
-                const ease = 3 * p1 * t * (1 - t) * (1 - t) + 3 * p2 * t2 * (1 - t) + t3;
-
-                const newYaw = startYaw + (diffYaw * ease);
-                const newPitch = startPitch + (diffPitch * ease);
-
-                this.bot.look(newYaw, newPitch, true); // Force update
-            };
-
-            this.bot.on('physicsTick', onTick);
-        });
+        // Delegated to HumanMotor
+        const target = new Vec3(position.x, position.y, position.z);
+        await this.humanMotor.smoothLookAt(target);
     }
 
     async smartMove(goal) {
@@ -112,6 +65,10 @@ class Primitives {
     }
 
     async look_at(position) {
+        await this.smoothLookAt(position);
+    }
+
+    async instant_look_at(position) {
         const target = new Vec3(position.x, position.y, position.z);
         await this.bot.lookAt(target);
     }
@@ -132,12 +89,8 @@ class Primitives {
     }
 
     async place_block(block, position, face) {
-        // 'block' here implies the item in hand to place
-        // 'face' needs to be a Vec3 vector (e.g., (0, 1, 0) for top)
-
         const targetPos = new Vec3(position.x, position.y, position.z);
 
-        // Find a solid neighbor to place against
         const neighbors = [
             { vec: new Vec3(0, -1, 0), face: new Vec3(0, 1, 0) }, // Top of block below
             { vec: new Vec3(0, 1, 0), face: new Vec3(0, -1, 0) }, // Bottom of block above
@@ -151,10 +104,7 @@ class Primitives {
             const neighborPos = targetPos.plus(n.vec);
             const neighborBlock = this.bot.blockAt(neighborPos);
 
-            // Check if valid reference block (solid, not liquid, not air)
             if (neighborBlock && neighborBlock.type !== 0 && !neighborBlock.liquid) { // 0 is Air
-                // Found a valid support!
-                // Place ON the neighbor, with the face pointing TOWARDS our target
                 await this.bot.placeBlock(neighborBlock, n.face);
                 return;
             }
@@ -186,7 +136,6 @@ class Primitives {
     }
 
     get_inventory() {
-        // Return simplified inventory
         return this.bot.inventory.items().map(item => ({
             name: item.name,
             count: item.count,
@@ -202,17 +151,15 @@ class Primitives {
     async scan_area(radius) {
         const center = this.bot.entity.position;
         const results = [];
-        const r = Math.min(radius, 32); // Limit radius for performance
+        const r = Math.min(radius, 32);
         let processed = 0;
 
         for (let x = -r; x <= r; x++) {
             for (let y = -r; y <= r; y++) {
                 for (let z = -r; z <= r; z++) {
-                    // Yield to event loop every 1000 blocks to stay responsive
                     if (++processed % 1000 === 0) {
                         await new Promise(resolve => setImmediate(resolve));
                     }
-
                     const pos = center.offset(x, y, z);
                     const block = this.bot.blockAt(pos);
                     if (block && block.name !== 'air') {
@@ -226,12 +173,12 @@ class Primitives {
         }
         return results;
     }
+
     // --- TIER 1: MICRO ACTIONS ---
 
     async look_random() {
-        // Random yaw/pitch variation
         const yaw = (Math.random() * Math.PI * 2) - Math.PI;
-        const pitch = (Math.random() * Math.PI / 2) - (Math.PI / 4); // Don't look too far up/down
+        const pitch = (Math.random() * Math.PI / 2) - (Math.PI / 4);
         await this.bot.look(yaw, pitch);
     }
 
@@ -252,11 +199,8 @@ class Primitives {
     }
 
     async start_action(action_name) {
-        // Generic trigger for holding down mouse buttons
         if (action_name === 'jump') this.bot.setControlState('jump', true);
         if (action_name === 'sneak') this.bot.setControlState('sneak', true);
-        // For breaking, mineflayer uses dig(), but we can fake start via swing arm?
-        // this.bot.swingArm();
     }
 
     async stop_action(action_name) {
@@ -265,14 +209,10 @@ class Primitives {
     }
 
     async start_break(on = true) {
-        // Manually trigger "attack" (left click) repeatedly or hold?
-        // Mineflayer doesn't strictly support "hold left click" without digging a block.
-        // We can use swingArm to simulate the visual.
-        // Or actually attack/dig if looking at a block.
         if (on) {
             this.bot.swingArm();
             const block = this.bot.blockAtCursor(4);
-            if (block) await this.bot.dig(block, 'ignore', 'raycast'); // Non-blocking dig attempt
+            if (block) await this.bot.dig(block, 'ignore', 'raycast');
         } else {
             this.bot.stopDigging();
         }
@@ -282,60 +222,23 @@ class Primitives {
         this.bot.stopDigging();
     }
 
-    // --- REFINEMENT PHASE: TROLL/HUMAN MOVEMENT ---
+    // --- HUMAN INTERFACE (Delegated to Middleware) ---
 
     async fidget() {
-        // "Ngứa ngáy": Spam WASD randomly
+        // Could delegate to HumanMotor too, but keeping simple for now
         const controls = ['forward', 'back', 'left', 'right'];
         const control = controls[Math.floor(Math.random() * controls.length)];
-        const duration = Math.floor(Math.random() * 200) + 100; // 100-300ms
-
+        const duration = Math.floor(Math.random() * 200) + 100;
         this.bot.setControlState(control, true);
         await new Promise(r => setTimeout(r, duration));
         this.bot.setControlState(control, false);
     }
 
     async human_move_to(position) {
-        // "Nghiêng nghiêng rẽ vòng": Simple implementation by creating intermediate points with noise.
-        // Or simpler: Just look slightly off-center while moving?
-        // Mineflayer pathfinder is strict. We cannot easily inject "curve" into it.
-        // Alternative: Use pathfinder to get NEAR, then handle last few blocks manually with noise.
-        // Or: Just add random look noise during movement loop? (Need to hook into pathfinder events? Hard).
-
-        // Simpler approach: Just use move_to for now but add a 'pre-movement' head turn
-        // Real curved movement requires writing a new physics mover which is out of scope for "primitives".
-        // Let's implement a "Lazy" move_to that stops short and wanders the rest?
-
-        // User requested "nghiêng nghiêng rẽ vòng". 
-        // Let's implement a manual move for short distance that strafes/curves.
-
         const target = new Vec3(position.x, position.y, position.z);
-        const dist = this.bot.entity.position.distanceTo(target);
-
-        if (dist < 10) {
-            // Manual "Curved" move for short distance
-            await this.bot.lookAt(target);
-            // Offset yaw slightly
-            const offset = (Math.random() * 0.4) - 0.2; // +/- 0.2 rad
-            await this.bot.look(this.bot.entity.yaw + offset, this.bot.entity.pitch);
-
-            this.bot.setControlState('forward', true);
-            // Randomly strafe
-            if (Math.random() < 0.3) this.bot.setControlState(Math.random() > 0.5 ? 'left' : 'right', true);
-
-            // Wait loop
-            while (this.bot.entity.position.distanceTo(target) > 1.5) {
-                await new Promise(r => setTimeout(r, 100));
-                // Correct course slowly
-                await this.bot.lookAt(target);
-                // Re-apply noise? No, coverge.
-            }
-            this.bot.clearControlStates();
-        } else {
-            // Long distance: use pathfinder but maybe look around?
-            return this.move_to(position);
-        }
+        await this.humanMotor.humanRelMove(target);
     }
+
     async set_base() {
         if (!this.botCore.memory) throw new Error("Memory Manager not available");
         const pos = this.get_position();
@@ -344,15 +247,11 @@ class Primitives {
     }
 
     async guard_base(radius = 20) {
-        // Phase 2 placeholder: Will delegate to GuardBehavior
-        // For now, we just acknowledge
         this.botCore.say(`Bat che do bao ve ban kinh ${radius} blocks! (Base Guard On)`);
-
-        // Trigger the Behavior if available (Phase 2)
         if (this.botCore.behaviors && this.botCore.behaviors.guard) {
             this.botCore.behaviors.guard.start(radius);
         } else {
-            console.warn("GuardBehavior not yet implemented (Phase 2)");
+            console.warn("GuardBehavior not available");
         }
     }
 }

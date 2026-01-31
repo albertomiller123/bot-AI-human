@@ -5,15 +5,12 @@ const VectorDB = require('../memory/VectorDB');
 class AgentOrchestrator {
     constructor(botCore) {
         this.botCore = botCore;
-        this.ai = botCore.aiLayer.brain; // AIManager from existing AILayer (temporarily accessed)
+        this.ai = botCore.aiManager; // AIManager from injected dependency
 
         this.strategic = new StrategicAgent(this.ai);
         this.tactical = new TacticalAgent(this.ai);
 
         // Memory System
-        // Will initialize VectorDB with existing instances
-        // But for now, we assume this is called AFTER botCore init
-        // We'll lazy init memory
         this.ltm = null;
         this.isProcessing = false; // Prevents race conditions
     }
@@ -28,25 +25,19 @@ class AgentOrchestrator {
             await this.ltm.init();
         }
 
-        console.log("[AgentOrchestrator] Cognitive Architecture Ready (Shared Memory)");
+        console.log("[AgentOrchestrator] Cognitive Architecture Ready (Strict Strategy Mode)");
     }
 
     /**
      * Called by GoalManager to bid for control
      */
     async getProposal() {
-        // If we simply have a plan in memory (queued by chat), we bid to execute it.
-        // For now, let's assume if `this.activePlan` exists, we bid high (90).
-
         if (this.activePlan) {
             return {
                 id: 'execute_agent_plan',
                 priority: 90, // User Command Priority
                 execute: async () => {
-                    console.log("[Orchestrator] Executing Active Plan...");
-                    // Logic to execute the plan step-by-step
-                    // For MVP, we just resume processing if halted?
-                    // Or we let the Orchestrator manage its own loop, but only when GoalManager says "Go".
+                    console.log("[Orchestrator] Resuming Active Plan deferred to GoalManager.");
                 }
             };
         }
@@ -60,9 +51,11 @@ class AgentOrchestrator {
 
     /**
      * Main Thinking Loop
+     * Returns a Plan Object: { type: 'strategy', steps: [...] }
+     * DOES NOT EXECUTE ACTIONS.
      */
     async process(username, message, context, visualContext) {
-        if (this.isProcessing) return;
+        if (this.isProcessing) return { type: 'chat', content: "I'm thinking, give me a moment." };
 
         // Safety Timeout: Reset if stuck
         const processTimeout = setTimeout(() => {
@@ -89,23 +82,14 @@ class AgentOrchestrator {
             }
 
             console.log(`[Orchestrator] Plan:`, highLevelSteps);
-            this.activePlan = highLevelSteps; // Store plan for GoalManager to pick up
+            this.activePlan = highLevelSteps;
 
-            // 3. Tactical Execution (Manager)
-            // DEPRECATED: We don't execute immediately anymore. We wait for GoalManager.
-            // BUT for MVP compatibility, let's keep executing tactical steps here IF we are allowed?
-            // BETTER: The execute logic should be moved to the `execute` callback of the proposal.
-
-            // For now, let's just return the strategy and let the tactical loop pick it up via GoalManager
-            // (Refactor Phase 2 will fully move execution to GoalManager callback)
-
+            // 3. Tactical Expansion (Manager) - Convert High Level to Executable Plans
             const actions = [];
             for (const step of highLevelSteps) {
                 const action = await this.tactical.planExecution(step, enhancedContext);
                 if (action) {
                     actions.push(action);
-                } else {
-                    console.warn(`[Orchestrator] Failed to execute step: ${step}`);
                 }
             }
 
@@ -114,6 +98,7 @@ class AgentOrchestrator {
                 this.ltm.add(`Goal: ${message}. Plan: ${JSON.stringify(highLevelSteps)}`, { user: username });
             }
 
+            // RETURN THE PLAN ONLY
             return { type: 'strategy', steps: actions };
 
         } catch (error) {
@@ -126,16 +111,13 @@ class AgentOrchestrator {
     }
 
     async gatherPerception() {
-        // Optimize Context: Limit Entities and Compress Inventory
-
         const entities = Object.values(this.bot.entities)
             .filter(e => e.type === 'mob' || e.type === 'player')
             .filter(e => e.position.distanceTo(this.bot.entity.position) < 16)
             .sort((a, b) => a.position.distanceTo(this.bot.entity.position) - b.position.distanceTo(this.bot.entity.position))
-            .slice(0, 10) // Limit to top 10 nearest
+            .slice(0, 10)
             .map(e => `${e.username || e.name} (${Math.round(e.position.distanceTo(this.bot.entity.position))}m)`);
 
-        // Compress Inventory
         const inventory = {};
         this.bot.inventory.items().forEach(item => {
             inventory[item.name] = (inventory[item.name] || 0) + item.count;
@@ -147,7 +129,7 @@ class AgentOrchestrator {
                 health: Math.round(this.bot.health),
                 food: Math.round(this.bot.food),
                 position: this.bot.entity.position.floored(),
-                inventory: inventory // Compressed format
+                inventory: inventory
             },
             time: this.bot.time.timeOfDay
         };
