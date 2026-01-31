@@ -87,12 +87,23 @@ class VectorDB {
 
             // HYBRID CACHE: Load Embeddings + Metadata into RAM (No Content)
             console.log("[VectorDB] ⏳ Hydrating Memory Index (IDs & Embeddings only)...");
+            // ONE-TIME FIX: Must load 'embedding' to calculate similarity
             const rows = await db.all("SELECT id, embedding, metadata FROM vectors");
-            this.vectors = rows.map(row => ({
-                id: row.id,
-                embedding: JSON.parse(row.embedding),
-                metadata: JSON.parse(row.metadata || '{}')
-            }));
+
+            this.vectors = rows.map(row => {
+                let parsedEmbedding;
+                try {
+                    parsedEmbedding = typeof row.embedding === 'string' ? JSON.parse(row.embedding) : row.embedding;
+                } catch (e) {
+                    parsedEmbedding = [];
+                }
+
+                return {
+                    id: row.id,
+                    embedding: parsedEmbedding,
+                    metadata: JSON.parse(row.metadata || '{}')
+                };
+            });
             console.log(`[VectorDB] ✅ Memory Index Ready: ${this.vectors.length} items loaded.`);
 
             this.initModel(); // Start loading AI model in background
