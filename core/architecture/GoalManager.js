@@ -19,7 +19,7 @@ class GoalManager {
     async tick() {
         // Safety Check: Auto-unlock if stuck
         if (this.isLocked) {
-            if (Date.now() - this.lockTimestamp > 15000) { // 15s Timeout
+            if (Date.now() - this.lockTimestamp > 10000) { // 10s Timeout (Phase 7 Optimization)
                 console.warn("[GoalManager] ⚠️ Lock timed out! Force unlocking.");
                 this.forceUnlock();
             } else {

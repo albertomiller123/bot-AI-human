@@ -89,7 +89,8 @@ class AIManager extends EventEmitter {
     }
 
     _estimateTokens(text) {
-        return Math.ceil(text.length / 4);
+        // Safer estimate for Unicode/Vietnamese (Average 3 chars per token instead of 4)
+        return Math.ceil(text.length / 3);
     }
 
     async _sendRequest(type, prompt, jsonMode) {
@@ -97,14 +98,14 @@ class AIManager extends EventEmitter {
 
         // Waiting for Worker Initialization
         if (!this.isReady) {
-            // Simple wait (up to 5s)
+            // Increased timeout: up to 30s (300 * 100ms) for slow models/machines
             let retries = 0;
-            while (!this.isReady && retries < 50) {
+            while (!this.isReady && retries < 300) {
                 await new Promise(r => setTimeout(r, 100));
                 retries++;
             }
             if (!this.isReady) {
-                console.error("[AIManager] Worker not ready after 5s.");
+                console.error("[AIManager] Worker not ready after 30s.");
                 return null;
             }
         }

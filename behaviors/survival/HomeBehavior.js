@@ -57,6 +57,23 @@ class HomeBehavior {
             return false;
         }
     }
+
+    /**
+     * Phase 6: Safety Check
+     * Returns TRUE if bot should return home (unsafe distance)
+     */
+    async checkSafety(maxDist = 150) {
+        const location = await this.botCore.memory.getLocation('base');
+        if (!location) return false;
+
+        const dist = this.bot.entity.position.distanceTo(new this.botCore.vec3(location.x, location.y, location.z));
+
+        if (dist > maxDist) {
+            console.warn(`[Home] ⚠️ Too far from base (${Math.round(dist)}m)! Returning...`);
+            return true;
+        }
+        return false;
+    }
 }
 
 module.exports = HomeBehavior;

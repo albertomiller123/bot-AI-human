@@ -150,7 +150,10 @@ class AdvancedPVP {
         const isSprinting = this.bot.entity.controlState['sprint'];
 
         // FIX: If sprinting (chasing) and health is decent, DO NOT shield (it slows you down)
-        if (isSprinting && this.bot.health > 10) {
+        // EXCEPTION: If we were recently hit (<1s), we might be in knockback "sprint" or under heavy fire.
+        const recentlyHit = (Date.now() - (this.bot.lastDamageTime || 0)) < 1000;
+
+        if (isSprinting && this.bot.health > 10 && !recentlyHit) {
             this.bot.deactivateItem();
             return;
         }

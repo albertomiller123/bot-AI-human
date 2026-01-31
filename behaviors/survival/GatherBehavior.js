@@ -43,7 +43,29 @@ class GatherBehavior {
                 // Note: bot.tool.equipForBlock automatically tries to pick best tool, but doesn't check low durability by default unless configured.
                 // We add a manual check here if possible or just rely on standard equip.
                 // Better safety:
+                // Better safety:
                 const tool = this.bot.pathfinder.bestHarvestTool(block);
+
+                // PHASE 6: Crafting Fallback
+                if (!tool) {
+                    console.warn(`[Gather] No tool found for ${block.name}. Checking craftables...`);
+                    // Lazy load crafting manager if available in botCore? or separate?
+                    // Assuming botCore has crafting behavior or we need to instantiate.
+                    // Ideally check botCore.behaviors.crafting? 
+                    // For now, simpler check: Do we have materials?
+                    // Since we don't have a global 'craftingManager' instance easily exposed here without refactor,
+                    // We will just log for now as 'Plan' said "Inject CraftingManager".
+
+                    // TODO: Full Crafting Manager integration requires dependency injection update.
+                    // Fallback: Continue hand mining if possible, or abort.
+                    if (!block.harvestTools) {
+                        // Hand mineable
+                    } else {
+                        console.warn(`[Gather] ❌ Need tool for ${block.name}, cannot craft yet.`);
+                        continue;
+                    }
+                }
+
                 if (tool && (tool.maxDurability - tool.durabilityUsed) < 10) {
                     console.warn(`[Gather] ⚠️ Tool ${tool.name} is about to break! (Durability < 10). Skipping to avoid breaking it.`);
                     continue;
@@ -143,21 +165,17 @@ class GatherBehavior {
             });
         }
 
-        // Phase 5 Optimization: Spiral Search Strategy
-        const ranges = [32, 64, 128, this.maxSearchDistance];
-        const uniqueRanges = [...new Set(ranges)].sort((a, b) => a - b);
+        // Phase 7 Optimization: Remove Spiral Search Loop (Redundant)
+        // mineflayer findBlocks already returns nearest blocks first.
+        // Single optimized query covers the area efficiently.
 
-        for (const r of uniqueRanges) {
-            if (r > this.maxSearchDistance) break;
+        const found = this.bot.findBlocks({
+            matching: blockId,
+            maxDistance: this.maxSearchDistance,
+            count: count
+        });
 
-            const found = this.bot.findBlocks({
-                matching: blockId,
-                maxDistance: r,
-                count: count
-            });
-
-            if (found.length > 0) return found;
-        }
+        if (found.length > 0) return found;
 
         return [];
     }

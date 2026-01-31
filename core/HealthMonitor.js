@@ -37,7 +37,20 @@ class HealthMonitor {
         if (this.isProcessing) return;
 
         this.isProcessing = true;
+
+        // Critical Section: Lock GoalManager to prevent interruptions (e.g. Brain trying to chat)
+        // Only lock if we actually need to do something? 
+        // For simplicity, we lock during the check-and-act cycle, but optimize to verify action first?
+        // Actually, we should only lock if checkHunger/Health RETURNS true (took action).
+        // Let's adopt a simpler approach: Lock for the duration of the tick if we are in critical state?
+        // No, 'checkHunger' is async and takes time to consume. We must lock BEFORE consuming.
+
+        let locked = false;
+
         try {
+            // We'll pass a "locker" callback to sub-functions? Or just lock here?
+            // Let's modify checkHunger/Health to manage locking if they ACT.
+
             await this.checkHunger();
             await this.checkHealth();
             await this.checkTime();
@@ -45,6 +58,21 @@ class HealthMonitor {
             console.warn("[HealthMonitor] Tick error:", e.message);
         } finally {
             this.isProcessing = false;
+        }
+    }
+
+    /**
+     * Helper to lock goal manager if available
+     */
+    _lockGoal() {
+        if (this.botCore && this.botCore.goalManager) {
+            this.botCore.goalManager.lock();
+        }
+    }
+
+    _unlockGoal() {
+        if (this.botCore && this.botCore.goalManager) {
+            this.botCore.goalManager.unlock();
         }
     }
 
@@ -61,12 +89,16 @@ class HealthMonitor {
         }
 
         console.log(`[HealthMonitor] Hungry (${this.bot.food}/20), eating ${food.name}...`);
+
+        this._lockGoal(); // Lock to prevent interruption
         try {
             await this.bot.equip(food, 'hand');
             await this.bot.consume();
             console.log("[HealthMonitor] Ate successfully");
         } catch (e) {
             console.warn("[HealthMonitor] Eating failed:", e.message);
+        } finally {
+            this._unlockGoal(); // Always unlock
         }
     }
 
@@ -103,11 +135,13 @@ class HealthMonitor {
         if (health < this.emergencyHealth) {
             const totem = this.bot.inventory.items().find(i => i.name === 'totem_of_undying');
             const offhand = this.bot.inventory.slots[45];
-            if (totem && offhand?.name !== 'totem_of_undying') {
+            if (offhand?.name !== 'totem_of_undying') {
                 console.log("[HealthMonitor] EMERGENCY! Equipping totem...");
+                this._lockGoal();
                 try {
                     await this.bot.equip(totem, 'off-hand');
                 } catch (e) { /* ignore */ }
+                finally { this._unlockGoal(); }
             }
         }
 
@@ -120,7 +154,12 @@ class HealthMonitor {
 
             if (nearbyHostile) {
                 console.log("[HealthMonitor] Low health + hostile nearby! Fleeing...");
-                await this.flee(nearbyHostile);
+                this._lockGoal();
+                try {
+                    await this.flee(nearbyHostile);
+                } finally {
+                    this._unlockGoal();
+                }
             }
         }
     }
